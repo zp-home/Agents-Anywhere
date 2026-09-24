@@ -48,6 +48,7 @@ from agent_server.infra.db import (
     platform_user_activity as platform_user_activity_t,
     projects as projects_t,
     sessions as sessions_t,
+    session_active_runs as session_active_runs_t,
     session_shares as session_shares_t,
     timeline_items as timeline_items_t,
     users as users_t,
@@ -203,6 +204,28 @@ def _truncate_title(text: str) -> str:
     if len(text) <= DERIVED_SESSION_TITLE_MAX_CHARS:
         return text
     return f"{text[:DERIVED_SESSION_TITLE_MAX_CHARS].rstrip()}..."
+
+
+def _manual_archive_values(*, archived: bool | int, now: str) -> dict[str, Any]:
+    """Column values for a user-initiated session archive or unarchive.
+
+    A manual unarchive is an explicit request to put the session back in the
+    sidebar, so it stamps the auto-archive tombstone. Without the stamp the
+    inactivity sweeper would re-archive a long-idle session on its very next
+    pass, immediately undoing the user. Only genuinely new activity clears the
+    tombstone and makes the session eligible for auto-archive again.
+    """
+
+    values: dict[str, Any] = {
+        "archived": int(bool(archived)),
+        "archived_at": now if archived else None,
+        "dsh_archive_legacy": 0,
+        "auto_archived": 0,
+        "updated_at": now,
+    }
+    if not archived:
+        values["auto_archived_at"] = now
+    return values
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

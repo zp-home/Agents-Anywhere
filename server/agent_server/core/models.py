@@ -55,6 +55,12 @@ SessionStatus = Literal[
     "error",
     "blocked",
 ]
+# Statuses the inactivity sweeper is allowed to archive. This is deliberately an
+# allow-list rather than a deny-list: every other status carries an outstanding
+# obligation ("waiting_approval" is literally a question the user has not
+# answered), and a status added in future defaults to *not* archived, which is
+# the safe failure direction.
+ARCHIVABLE_SESSION_STATUSES: frozenset[str] = frozenset({"idle", "error"})
 TimelineType = Literal[
     "message",
     "tool",
@@ -758,6 +764,10 @@ class SessionView(BaseModel):
     archived: bool = False
     archivedAt: str | None = None
     userArchived: bool = False
+    # True when the inactivity sweeper archived this session rather than the
+    # user. Such a session is folded away, not locked: sending it a message
+    # revives it. A user archive is never undone automatically.
+    autoArchived: bool = False
     sourceAvailability: Literal[
         "available",
         "archived",

@@ -69,6 +69,7 @@ export type SessionView = {
   archived: boolean
   archivedAt?: string | null
   userArchived?: boolean
+  autoArchived?: boolean
   sourceAvailability?: "available" | "archived" | "unavailable" | "deleted" | "missing" | "unknown"
   sourceAvailabilityReason?: string | null
   sourceAvailabilityUpdatedAt?: string | null

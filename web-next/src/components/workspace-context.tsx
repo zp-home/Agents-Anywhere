@@ -165,6 +165,7 @@ function mapSession(session: RealSessionView): SessionView {
     archived: session.archived,
     archivedAt: session.archivedAt,
     userArchived: session.userArchived,
+    autoArchived: session.autoArchived,
     sourceAvailability: session.sourceAvailability,
     sourceAvailabilityReason: session.sourceAvailabilityReason,
     sourceAvailabilityUpdatedAt: session.sourceAvailabilityUpdatedAt,

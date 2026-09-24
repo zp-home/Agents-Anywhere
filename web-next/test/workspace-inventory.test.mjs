@@ -72,6 +72,12 @@ test('a complete snapshot supplies every project without requests on expand and 
   await view.emit(snapshot([project(), project('p2', 'Project Two')], [...rows, session('other', 'p2')]))
   for (const name of ['Project One', 'Project Two', 'Project One', 'Project One']) await act(async () => projectButton(view.container, name).click())
   assert.equal(view.state.sessions.length, 106)
+  // The sidebar caps what it renders, so the tail sits behind "show more".
+  // Revealing it must still come out of the snapshot already in memory.
+  const showMore = [...view.container.querySelectorAll('button')].find(button => button.textContent.startsWith('显示其余'))
+  assert.ok(showMore, 'Expected the overflow of 105 sessions to be collapsed')
+  assert.doesNotMatch(view.container.textContent, /Session old-104/)
+  await act(async () => showMore.click())
   assert.match(view.container.textContent, /Session old-104/)
   assert.match(view.container.textContent, /Session other/)
   assert.deepEqual(view.calls, { projects: 0, inventory: 0, connectors: 0, pages: 0 })
@@ -145,6 +151,21 @@ test('archived settings read the shared inventory without a separate list reques
   assert.doesNotMatch(view.container.textContent, /Session s1/)
   assert.equal(view.calls.pages, 0)
   assert.equal(view.calls.inventory, 0)
+})
+test('the archived list distinguishes the sweeper from the user', async (t) => {
+  // A session the user never archived has to say so, or the list looks like
+  // something silently threw work away.
+  const view = await render(t, { archives: true })
+  await view.emit(snapshot([project()], [
+    session('by-hand', 'p1', { archived: true, archivedAt: time, userArchived: true }),
+    session('by-sweeper', 'p1', { archived: true, archivedAt: time, userArchived: false, autoArchived: true }),
+  ]))
+  const rows = [...view.container.querySelectorAll('div')].filter(node => node.textContent.includes('Session by-'))
+  const sweeperRow = rows.find(node => node.textContent.includes('Session by-sweeper') && !node.textContent.includes('Session by-hand'))
+  const manualRow = rows.find(node => node.textContent.includes('Session by-hand') && !node.textContent.includes('Session by-sweeper'))
+  assert.ok(sweeperRow && manualRow, 'Expected one row per archived session')
+  assert.match(sweeperRow.textContent, /自动归档/)
+  assert.doesNotMatch(manualRow.textContent, /自动归档/)
 })
 test('a late full inventory cannot undo a completed project edit', async (t) => {
   const view = await render(t); await view.emit(snapshot())

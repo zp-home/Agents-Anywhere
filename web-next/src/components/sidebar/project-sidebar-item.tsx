@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/tooltip"
 import type { WorkspaceSessionView } from "@/components/workspace-context"
 import { SessionSidebarItem } from "@/components/sidebar/session-sidebar-item"
+import { capRecentSessions } from "@/components/sidebar/sidebar-session-cap"
 import { OverflowMarquee } from "@/components/sidebar/overflow-marquee"
 import type { ProjectView } from "@/features/dashboard/types"
 import { cn } from "@/lib/utils"
@@ -73,7 +74,13 @@ export function ProjectSidebarItem({
   const t = useTranslations("dashboard")
   const [nameHovered, setNameHovered] = React.useState(false)
   const [optionsOpen, setOptionsOpen] = React.useState(false)
+  const [showAllSessions, setShowAllSessions] = React.useState(false)
   const containsActiveSession = sessions.some((session) => session.id === activeSessionId)
+  // A single busy project can otherwise fill the whole sidebar on its own.
+  const { visible: visibleSessions, hiddenCount } = React.useMemo(
+    () => capRecentSessions(sessions, { expanded: showAllSessions, activeSessionId }),
+    [sessions, showAllSessions, activeSessionId],
+  )
 
   return (
     <SidebarMenuItem>
@@ -166,7 +173,7 @@ export function ProjectSidebarItem({
             {sessions.length === 0 ? (
               <li className="py-2 pl-6 pr-3 text-xs text-muted-foreground">{t("projects.noSessions")}</li>
             ) : (
-              sessions.map((session) => (
+              visibleSessions.map((session) => (
                 <SessionSidebarItem
                   key={session.id}
                   item={session}
@@ -179,6 +186,15 @@ export function ProjectSidebarItem({
                 />
               ))
             )}
+            {hiddenCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllSessions(true)}
+                className="w-full rounded-md py-1.5 pl-9 pr-3 text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                {t("actions.showMoreSessions", { count: hiddenCount })}
+              </button>
+            ) : null}
           </SidebarMenu>
         </CollapsibleContent>
       </Collapsible>

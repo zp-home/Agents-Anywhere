@@ -392,7 +392,14 @@ class SessionRunService:
             raise SessionRunNotFoundError("session not found") from None
 
         if session.archived:
-            raise SessionRunConflictError(_session_source_error_detail(session))
+            # An inactivity auto-archive folds a session away; it does not lock
+            # it. Sending a message is exactly the activity that should bring it
+            # back, so revive it and carry on. A user archive is an explicit
+            # decision and still rejects the write.
+            if session.autoArchived and await self._store.clear_auto_archive(session_id):
+                session = await self._store.get_session(session_id, user_id=user_id)
+            else:
+                raise SessionRunConflictError(_session_source_error_detail(session))
         if not session.takeover:
             raise SessionRunConflictError("session is read-only until takeover is enabled")
         if not await self._manager.is_online(session.connectorId):

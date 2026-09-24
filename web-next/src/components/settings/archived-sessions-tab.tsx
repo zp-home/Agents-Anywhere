@@ -284,8 +284,17 @@ export function ArchivedSessionsTab({
                         <p className="truncate text-sm font-medium">
                           {session.title?.trim() || t("archivedUntitled")}
                         </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {time ? dateFormatter.format(new Date(time)) : t("archivedTimeUnavailable")}
+                        <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="truncate">
+                            {time ? dateFormatter.format(new Date(time)) : t("archivedTimeUnavailable")}
+                          </span>
+                          {/* Explains why a session the user never archived is
+                              in this list, and implies it comes back on its own. */}
+                          {session.autoArchived ? (
+                            <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] leading-none">
+                              {t("archivedAutoBadge")}
+                            </span>
+                          ) : null}
                         </p>
                       </div>
                       <Button

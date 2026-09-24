@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from agent_server.infra.repositories.store_support import *
 from agent_server.infra.repositories.projects import _clean_workspace_path
-from agent_server.core.models import ConnectorSessionResolution
+from agent_server.core.models import ARCHIVABLE_SESSION_STATUSES, ConnectorSessionResolution
 
 
 SESSION_CURSOR_VERSION = 1
@@ -55,7 +55,13 @@ def _source_archive_update(
         and previous_source_state in {None, "visible", "available"}
         and not archived
     ):
-        return {"archived": 1, "archived_at": observed_at, "dsh_archive_legacy": 0}
+        return {
+            "archived": 1,
+            "archived_at": observed_at,
+            "dsh_archive_legacy": 0,
+            # A runtime-observed archive is not an inactivity auto-archive.
+            "auto_archived": 0,
+        }
     return {}
 
 
@@ -1415,6 +1421,173 @@ class SessionRepositoryMixin:
         return await self.get_session(session_id, user_id=user_id)
 
 
+    async def _auto_archive_candidates(
+        self,
+        *,
+        cutoff: str,
+        limit: int,
+        archived: int,
+        auto_archived: int,
+        idle: bool,
+    ) -> list[tuple[str, str]]:
+        """Shared candidate scan for both sweeper directions.
+
+        ``_session_sort_at`` is the project's existing "last activity"
+        expression (newest timeline row coalesced with ``last_activity_at``),
+        reused here rather than inventing a second judgement. It carries a
+        correlated subquery, so callers batch through this with a bound
+        ``limit`` instead of issuing one table-wide UPDATE.
+
+        Returns ``(session_id, user_id)`` pairs; the sweeper needs the owner to
+        publish ``dashboard.changed``.
+        """
+
+        latest_source, latest_join = _latest_timeline_item_source()
+        activity_at = _session_sort_at(latest_source)
+        active_run = (
+            select(session_active_runs_t.c.session_id)
+            .where(session_active_runs_t.c.session_id == sessions_t.c.id)
+            .exists()
+        )
+        query = (
+            select(sessions_t.c.id, connectors_t.c.user_id)
+            .select_from(
+                sessions_t.join(
+                    connectors_t, connectors_t.c.id == sessions_t.c.connector_id
+                ).outerjoin(latest_source, latest_join)
+            )
+            .where(
+                sessions_t.c.archived == archived,
+                sessions_t.c.auto_archived == auto_archived,
+                # Sessions on a revoked connector are filtered out of every
+                # user-facing list already, so touching them is pure write
+                # amplification with no visible effect.
+                connectors_t.c.revoked == 0,
+                activity_at < cutoff if idle else activity_at >= cutoff,
+            )
+            .order_by(sessions_t.c.id)
+            .limit(limit)
+        )
+        if idle:
+            query = query.where(
+                sessions_t.c.pinned == 0,
+                # A tombstone means the user already pulled this session back
+                # out of the archive. Leave it alone until new activity clears
+                # the stamp.
+                sessions_t.c.auto_archived_at.is_(None),
+                sessions_t.c.status.in_(sorted(ARCHIVABLE_SESSION_STATUSES)),
+                # session_active_runs is the authoritative live-run record and
+                # catches a stuck run whose status drifted back to "idle".
+                ~active_run,
+            )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(query)).all()
+        return [(str(row.id), str(row.user_id)) for row in rows]
+
+    async def auto_archive_inactive_sessions(
+        self,
+        *,
+        cutoff: str,
+        limit: int,
+    ) -> list[tuple[str, str]]:
+        """Archive one batch of idle sessions. Returns rows actually written."""
+
+        candidates = await self._auto_archive_candidates(
+            cutoff=cutoff, limit=limit, archived=0, auto_archived=0, idle=True
+        )
+        if not candidates:
+            return []
+        now = utc_now()
+        ids = [session_id for session_id, _ in candidates]
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                update(sessions_t)
+                .where(
+                    sessions_t.c.id.in_(ids),
+                    # Re-check under the write: a session revived between the
+                    # scan and here must not be archived.
+                    sessions_t.c.archived == 0,
+                    sessions_t.c.auto_archived == 0,
+                )
+                .values(
+                    archived=1,
+                    archived_at=now,
+                    dsh_archive_legacy=0,
+                    auto_archived=1,
+                    auto_archived_at=now,
+                    updated_at=now,
+                )
+                .returning(sessions_t.c.id)
+            )
+            written = {str(row.id) for row in result}
+        return [pair for pair in candidates if pair[0] in written]
+
+    async def auto_unarchive_active_sessions(
+        self,
+        *,
+        cutoff: str,
+        limit: int,
+    ) -> list[tuple[str, str]]:
+        """Reverse pass: revive auto-archived sessions that saw new activity.
+
+        This is the self-healing backstop. The synchronous revival on the
+        send-message path gives low latency; this guarantees correctness even
+        for activity that arrives by some path nobody hooked.
+        """
+
+        candidates = await self._auto_archive_candidates(
+            cutoff=cutoff, limit=limit, archived=1, auto_archived=1, idle=False
+        )
+        if not candidates:
+            return []
+        now = utc_now()
+        ids = [session_id for session_id, _ in candidates]
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                update(sessions_t)
+                .where(
+                    sessions_t.c.id.in_(ids),
+                    # Only ever undo the sweeper's own archive.
+                    sessions_t.c.auto_archived == 1,
+                )
+                .values(
+                    archived=0,
+                    archived_at=None,
+                    auto_archived=0,
+                    auto_archived_at=None,
+                    updated_at=now,
+                )
+                .returning(sessions_t.c.id)
+            )
+            written = {str(row.id) for row in result}
+        return [pair for pair in candidates if pair[0] in written]
+
+    async def clear_auto_archive(self, session_id: str) -> bool:
+        """Revive an auto-archived session because real activity arrived.
+
+        Clears the tombstone too, so the session becomes eligible for
+        auto-archive again after another full idle period. A user archive is
+        never touched: only rows with ``auto_archived = 1`` match.
+        """
+
+        now = utc_now()
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                update(sessions_t)
+                .where(
+                    sessions_t.c.id == session_id,
+                    sessions_t.c.auto_archived == 1,
+                )
+                .values(
+                    archived=0,
+                    archived_at=None,
+                    auto_archived=0,
+                    auto_archived_at=None,
+                    updated_at=now,
+                )
+            )
+        return int(result.rowcount or 0) > 0
+
     async def set_session_archived(
         self,
         session_id: str,
@@ -1428,12 +1601,7 @@ class SessionRepositoryMixin:
             await conn.execute(
                 update(sessions_t)
                 .where(sessions_t.c.id == session_id)
-                .values(
-                    archived=int(bool(archived)),
-                    archived_at=now if archived else None,
-                    dsh_archive_legacy=0,
-                    updated_at=now,
-                )
+                .values(**_manual_archive_values(archived=archived, now=now))
             )
         return await self.get_session(session_id, user_id=user_id)
 
@@ -1474,12 +1642,7 @@ class SessionRepositoryMixin:
                 await conn.execute(
                     update(sessions_t)
                     .where(sessions_t.c.id.in_(owned_ids))
-                    .values(
-                        archived=int(bool(archived)),
-                        archived_at=now if archived else None,
-                        dsh_archive_legacy=0,
-                        updated_at=now,
-                    )
+                    .values(**_manual_archive_values(archived=archived, now=now))
                 )
 
         sessions: list[SessionView] = []
@@ -1544,12 +1707,7 @@ class SessionRepositoryMixin:
                 await conn.execute(
                     update(sessions_t)
                     .where(sessions_t.c.id.in_(target_ids))
-                    .values(
-                        archived=int(bool(archived)),
-                        archived_at=now if archived else None,
-                        dsh_archive_legacy=0,
-                        updated_at=now,
-                    )
+                    .values(**_manual_archive_values(archived=archived, now=now))
                 )
 
         if not target_ids:
@@ -1883,6 +2041,7 @@ class SessionRepositoryMixin:
         latest_turn_end_seq = int(row["latest_turn_end_seq"] or 0)
         updated_seq = int(row["updated_seq"] or 0)
         aa_archived = bool(row["archived"])
+        auto_archived = bool(row["auto_archived"])
         source_availability = _normalized_source_availability(row["source_state"])
         return SessionView(
             id=session_id,
@@ -1902,12 +2061,13 @@ class SessionRepositoryMixin:
             pinnedAt=row["pinned_at"],
             archived=aa_archived,
             archivedAt=row["archived_at"],
-            userArchived=aa_archived,
+            userArchived=aa_archived and not auto_archived,
+            autoArchived=auto_archived,
             sourceAvailability=source_availability,
             sourceAvailabilityReason=row["source_state_reason"],
             sourceAvailabilityUpdatedAt=row["source_state_at"],
             sourceObservationOrigin=row["source_observation_origin"],
-            archiveSource="user" if aa_archived else None,
+            archiveSource="user" if (aa_archived and not auto_archived) else None,
             unread=latest_turn_end_seq > last_read_seq,
             lastReadSeq=last_read_seq,
             latestTurnEndSeq=latest_turn_end_seq,

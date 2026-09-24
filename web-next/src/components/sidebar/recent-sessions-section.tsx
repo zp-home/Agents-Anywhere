@@ -6,6 +6,7 @@ import { SessionFilterMenu } from "@/components/session-filter-menu"
 import { SessionSidebarItem } from "@/components/sidebar/session-sidebar-item"
 import { SidebarLoadingItem } from "@/components/sidebar/sidebar-loading-item"
 import { SidebarSectionTrigger } from "@/components/sidebar/sidebar-section-trigger"
+import { capRecentSessions } from "@/components/sidebar/sidebar-session-cap"
 import {
   Collapsible,
   CollapsibleContent,
@@ -44,6 +45,11 @@ export function RecentSessionsSection({
 }: RecentSessionsSectionProps) {
   const t = useTranslations("dashboard")
   const [expanded, setExpanded] = React.useState(true)
+  const [showAll, setShowAll] = React.useState(false)
+  const { visible, hiddenCount } = React.useMemo(
+    () => capRecentSessions(sessions, { expanded: showAll, activeSessionId }),
+    [sessions, showAll, activeSessionId],
+  )
 
   return (
     <SidebarGroup>
@@ -72,7 +78,7 @@ export function RecentSessionsSection({
               ) : sessions.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-muted-foreground">{t("empty.noSessionsMatch")}</p>
               ) : (
-                sessions.map((item) => (
+                visible.map((item) => (
                   <SessionSidebarItem
                     key={item.id}
                     item={item}
@@ -84,6 +90,15 @@ export function RecentSessionsSection({
                   />
                 ))
               )}
+              {hiddenCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="mx-2 rounded-md px-2 py-1.5 text-left text-xs text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                >
+                  {t("actions.showMoreSessions", { count: hiddenCount })}
+                </button>
+              ) : null}
             </SidebarMenu>
           </SidebarGroupContent>
         </CollapsibleContent>

@@ -419,6 +419,12 @@ sessions = Table(
     Column("archived", Integer, nullable=False, server_default="0"),
     Column("archived_at", Text),
     Column("dsh_archive_legacy", Integer, nullable=False, server_default="0"),
+    # Inactivity auto-archive. ``auto_archived`` is the current state;
+    # ``auto_archived_at`` is a tombstone that survives an unarchive so the
+    # sweeper cannot immediately re-archive a session the user pulled back out.
+    # Only genuinely new activity clears the tombstone.
+    Column("auto_archived", Integer, nullable=False, server_default="0"),
+    Column("auto_archived_at", Text),
     Column("source_state", Text, nullable=False, server_default="visible"),
     Column("source_state_at", Text),
     Column("source_state_reason", Text),
@@ -446,6 +452,13 @@ sessions = Table(
         "idx_sessions_project_archived_sort",
         "project_id",
         "archived",
+        "pinned",
+        "sort_at",
+    ),
+    Index(
+        "idx_sessions_auto_archive",
+        "archived",
+        "auto_archived",
         "pinned",
         "sort_at",
     ),
