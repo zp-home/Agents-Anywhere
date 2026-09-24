@@ -82,6 +82,7 @@ export function RecentSessionsSection({
                   <SessionSidebarItem
                     key={item.id}
                     item={item}
+                    reorderGroup="recent-sessions"
                     isActive={activeSessionId === item.id}
                     onOpen={() => onOpenSession(item.id)}
                     onTogglePin={() => onToggleSessionPin(item.id)}

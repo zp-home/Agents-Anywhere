@@ -28,6 +28,13 @@ import {
   type ProjectSessionStatusFilter,
 } from "@/components/sidebar/sidebar-selectors"
 import { SidebarAccountFooter } from "@/components/sidebar/sidebar-account-footer"
+import {
+  applyManualOrder,
+  moveInOrder,
+  type SidebarDropPlacement,
+  type SidebarOrderKind,
+} from "@/components/sidebar/sidebar-manual-order"
+import { SidebarReorderProvider } from "@/components/sidebar/sidebar-reorder"
 import { useProjectSidebarPreferences } from "@/components/sidebar/use-project-sidebar-preferences"
 import {
   Sidebar,
@@ -67,6 +74,8 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
     toggleArchiveSession,
     renameSession,
     refreshData,
+    sidebarOrder,
+    saveSidebarOrder,
   } = useWorkspace()
   const { signOut, me, session: authSession } = useAuth()
   const [mobileConnectionsSidebarVisible] = useMobileConnectionsSidebarVisibility()
@@ -78,26 +87,46 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
   const [projectToArchive, setProjectToArchive] = React.useState<ProjectView | null>(null)
   const [projectSessionStatus, setProjectSessionStatus] =
     React.useState<ProjectSessionStatusFilter>("active")
+  // Rows no longer follow activity (running sessions used to jump to the top).
+  // They follow the user's dragged order; rows not placed yet show first, newest created first.
+  const orderedProjects = React.useMemo(
+    () => applyManualOrder(projects, sidebarOrder.projects),
+    [projects, sidebarOrder.projects],
+  )
+  const orderedSessions = React.useMemo(
+    () => applyManualOrder(sessions, sidebarOrder.sessions),
+    [sessions, sidebarOrder.sessions],
+  )
+  const reorder = React.useCallback(
+    (kind: SidebarOrderKind, draggedId: string, targetId: string, placement: SidebarDropPlacement) => {
+      // Save the whole list as displayed: rows not placed yet get their slot now,
+      // and ids of deleted rows fall out of the stored list.
+      const current = (kind === "projects" ? orderedProjects : orderedSessions).map((item) => item.id)
+      const next = moveInOrder(current, draggedId, targetId, placement)
+      if (next !== current) saveSidebarOrder(kind, [...next])
+    },
+    [orderedProjects, orderedSessions, saveSidebarOrder],
+  )
 
   const pinnedProjects = React.useMemo(
-    () => selectPinnedProjects(projects, sessions, projectSessionStatus),
-    [projectSessionStatus, projects, sessions],
+    () => selectPinnedProjects(orderedProjects, orderedSessions, projectSessionStatus),
+    [projectSessionStatus, orderedProjects, orderedSessions],
   )
   const pinnedSessions = React.useMemo(
-    () => selectPinnedSessions(sessions),
-    [sessions],
+    () => selectPinnedSessions(orderedSessions),
+    [orderedSessions],
   )
   const regularProjects = React.useMemo(
-    () => selectRegularProjects(projects, sessions, projectSessionStatus),
-    [projectSessionStatus, projects, sessions],
+    () => selectRegularProjects(orderedProjects, orderedSessions, projectSessionStatus),
+    [projectSessionStatus, orderedProjects, orderedSessions],
   )
   const allSessions = React.useMemo(
-    () => selectAllSessions(sessions, filter, search),
-    [filter, search, sessions],
+    () => selectAllSessions(orderedSessions, filter, search),
+    [filter, search, orderedSessions],
   )
   const projectSessionsById = React.useMemo(
-    () => groupSessionsByProject(sessions),
-    [sessions],
+    () => groupSessionsByProject(orderedSessions),
+    [orderedSessions],
   )
   const unassignedSessions = React.useMemo(() => {
     const projectIds = new Set(projects.map((project) => project.id))
@@ -216,6 +245,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
         </SidebarMenu>
       </SidebarHeader>
 
+      <SidebarReorderProvider onReorder={reorder}>
       <SidebarContent className="px-2">
 
         <DevicesSection
@@ -279,6 +309,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
           </>
         )}
       </SidebarContent>
+      </SidebarReorderProvider>
 
       <SidebarAccountFooter me={me} navigate={navigate} signOut={signOut} />
 

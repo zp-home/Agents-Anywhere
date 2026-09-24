@@ -60,11 +60,13 @@ export function PinnedSection({
                 projects={projects}
                 controller={projectController}
                 sessionStatus={projectSessionStatus}
+                reorderGroup="pinned-projects"
               />
               {sessions.map((item) => (
                 <SessionSidebarItem
                   key={`session-${item.id}`}
                   item={item}
+                  reorderGroup="pinned-sessions"
                   isActive={projectController.activeSessionId === item.id}
                   onOpen={() => onOpenSession(item.id)}
                   onTogglePin={() => onToggleSessionPin(item.id)}

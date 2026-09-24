@@ -49,6 +49,7 @@ async function render(t, { sidebar = false, archives = false } = {}) {
   t.mock.method(dashboardApi, 'listProjects', async () => { calls.projects++; return { projects: [project()] } })
   t.mock.method(dashboardApi, 'listSessionInventory', async () => { calls.inventory++; return { sessions: [session()], serverTime: time } })
   t.mock.method(dashboardApi, 'listConnectors', async () => { calls.connectors++; return { connectors: [connector] } })
+  t.mock.method(dashboardApi, 'getSidebarOrder', async () => ({ sidebarOrder: { projects: [], sessions: [] }, serverTime: time }))
   for (const name of ['listProjectSessions', 'listSessions']) t.mock.method(dashboardApi, name, async () => { calls.pages++; throw new Error('Per-project and paginated reads must not run') })
   let state
   function Probe() {
@@ -178,4 +179,49 @@ test('a late full inventory cannot undo a completed project edit', async (t) => 
   await act(async () => finish({ sessions: [session()], serverTime: time }))
   assert.equal(view.state.projects[0].name, 'Edited')
   assert.equal(view.state.isLoading, false)
+})
+
+const sessionTitles = container => [...container.querySelectorAll('li')].map(node => node.textContent.match(/Session (s\d)/)?.[1]).filter(Boolean).filter((id, index, all) => all.indexOf(id) === index)
+test('the sidebar follows the stored order, and a drag being saved is not undone by an older snapshot', async (t) => {
+  const view = await render(t, { sidebar: true })
+  const rows = [session('s1'), session('s2'), session('s3')]
+  const stored = { projects: [], sessions: ['s3', 's1', 's2'] }
+  await view.emit({ ...snapshot([project()], rows), sidebarOrder: stored })
+  assert.deepEqual(view.state.sidebarOrder, stored)
+  await act(async () => projectButton(view.container, 'Project One').click())
+  assert.deepEqual(sessionTitles(view.container), ['s3', 's1', 's2'])
+
+  const puts = []
+  let land
+  t.mock.method(dashboardApi, 'updateSidebarOrder', (token, kind, ids) => { puts.push([token, kind, ids]); return new Promise(resolve => { land = resolve }) })
+  await act(async () => view.state.saveSidebarOrder('sessions', ['s2', 's3', 's1']))
+  assert.deepEqual(puts, [['fixture-token', 'sessions', ['s2', 's3', 's1']]])
+  assert.deepEqual(sessionTitles(view.container), ['s2', 's3', 's1'])
+  // A push that was taken before the save landed still carries the old order.
+  await view.emit({ ...snapshot([project()], [...rows, session('s4')]), sidebarOrder: stored })
+  assert.deepEqual(view.state.sidebarOrder.sessions, ['s2', 's3', 's1'])
+  await act(async () => { land({ sidebarOrder: { projects: [], sessions: ['s2', 's3', 's1'] }, serverTime: time }); await delay(10) })
+  await view.emit({ ...snapshot([project()], rows), sidebarOrder: { projects: [], sessions: ['s1', 's2', 's3'] } })
+  // Once nothing is pending, pushes from other devices apply again.
+  assert.deepEqual(sessionTitles(view.container), ['s1', 's2', 's3'])
+})
+test('a drag the server rejects falls back to the stored order', async (t) => {
+  const view = await render(t)
+  const stored = { projects: ['p1'], sessions: ['s1'] }
+  await view.emit({ ...snapshot(), sidebarOrder: stored })
+  t.mock.method(dashboardApi, 'getSidebarOrder', async () => ({ sidebarOrder: stored, serverTime: time }))
+  t.mock.method(dashboardApi, 'updateSidebarOrder', async () => { throw new Error('offline') })
+  await act(async () => { view.state.saveSidebarOrder('projects', ['p2', 'p1']); await delay(30) })
+  assert.deepEqual(view.state.sidebarOrder, stored)
+})
+test('sessions not placed yet show first, newest created first, and do not move with activity', async (t) => {
+  const view = await render(t, { sidebar: true })
+  const rows = [
+    session('s1', 'p1', { createdAt: '2026-09-01T00:00:00Z', status: 'running', sortAt: '2026-09-08T11:00:00Z' }),
+    session('s2', 'p1', { createdAt: '2026-09-05T00:00:00Z' }),
+    session('s3', 'p1', { createdAt: '2026-09-03T00:00:00Z' }),
+  ]
+  await view.emit({ ...snapshot([project()], rows), sidebarOrder: { projects: [], sessions: [] } })
+  await act(async () => projectButton(view.container, 'Project One').click())
+  assert.deepEqual(sessionTitles(view.container), ['s2', 's3', 's1'])
 })

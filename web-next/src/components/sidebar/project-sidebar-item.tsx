@@ -38,12 +38,14 @@ import type { WorkspaceSessionView } from "@/components/workspace-context"
 import { SessionSidebarItem } from "@/components/sidebar/session-sidebar-item"
 import { capRecentSessions } from "@/components/sidebar/sidebar-session-cap"
 import { OverflowMarquee } from "@/components/sidebar/overflow-marquee"
+import { SidebarDropIndicator, useSidebarReorderItem } from "@/components/sidebar/sidebar-reorder"
 import type { ProjectView } from "@/features/dashboard/types"
 import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 
 export function ProjectSidebarItem({
   project,
+  reorderGroup,
   sessions,
   expanded,
   activeSessionId,
@@ -58,6 +60,8 @@ export function ProjectSidebarItem({
   onRenameSession,
 }: {
   project: ProjectView
+  /** Projects sharing a group form one list the user can drag to reorder. */
+  reorderGroup: string
   sessions: WorkspaceSessionView[]
   expanded: boolean
   activeSessionId: string | null
@@ -75,6 +79,7 @@ export function ProjectSidebarItem({
   const [nameHovered, setNameHovered] = React.useState(false)
   const [optionsOpen, setOptionsOpen] = React.useState(false)
   const [showAllSessions, setShowAllSessions] = React.useState(false)
+  const { dragProps, placement, dragging } = useSidebarReorderItem({ kind: "projects", id: project.id, group: reorderGroup })
   const containsActiveSession = sessions.some((session) => session.id === activeSessionId)
   // A single busy project can otherwise fill the whole sidebar on its own.
   const { visible: visibleSessions, hiddenCount } = React.useMemo(
@@ -86,7 +91,8 @@ export function ProjectSidebarItem({
     <SidebarMenuItem>
       <Collapsible open={expanded} onOpenChange={onExpandedChange}>
         <div
-          className="group/project relative"
+          {...dragProps}
+          className={cn("group/project relative", dragging && "opacity-50")}
           onPointerEnter={() => setNameHovered(true)}
           onPointerLeave={() => setNameHovered(false)}
         >
@@ -166,6 +172,7 @@ export function ProjectSidebarItem({
             </Tooltip>
             </div>
           </TooltipProvider>
+          <SidebarDropIndicator placement={placement} />
         </div>
 
         <CollapsibleContent>
@@ -178,6 +185,7 @@ export function ProjectSidebarItem({
                   key={session.id}
                   item={session}
                   inset
+                  reorderGroup={`project:${project.id}`}
                   isActive={activeSessionId === session.id}
                   onOpen={() => onOpenSession(session.id)}
                   onTogglePin={() => onToggleSessionPin(session.id)}

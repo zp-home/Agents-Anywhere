@@ -84,6 +84,7 @@ export type SessionView = {
   lastItemAt?: string | null
   lastItemOrderSeq?: number | null
   sortAt?: string | null
+  createdAt?: string | null
   updatedSeq: number
   effectiveRunMode?: "chat" | "terminal" | null
   runtimeSettings?: Record<string, unknown> | null

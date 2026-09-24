@@ -204,6 +204,30 @@ class ProjectListResponse(BaseModel):
     serverTime: str
 
 
+SidebarOrderKind = Literal["projects", "sessions"]
+
+
+class SidebarOrderView(BaseModel):
+    """Manual sidebar order; ids not listed are shown first, newest created first."""
+
+    projects: list[str] = Field(default_factory=list)
+    sessions: list[str] = Field(default_factory=list)
+
+
+class SidebarOrderUpdateRequest(BaseModel):
+    """Replace one kind's whole order with the list as the user now sees it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: SidebarOrderKind
+    ids: list[Annotated[str, Field(min_length=1, max_length=255)]] = Field(max_length=20000)
+
+
+class SidebarOrderResponse(BaseModel):
+    sidebarOrder: SidebarOrderView
+    serverTime: str
+
+
 class ProjectDeleteResponse(BaseModel):
     projectId: str
     detachedSessions: int
@@ -789,6 +813,9 @@ class SessionView(BaseModel):
     lastItemAt: str | None = None
     lastItemOrderSeq: int | None = None
     sortAt: str | None = None
+    # Stable key for the sidebar: sessions the user has not placed by drag yet
+    # are listed newest created first, so they do not jump with activity.
+    createdAt: str | None = None
     updatedSeq: int
 
     @model_validator(mode="after")

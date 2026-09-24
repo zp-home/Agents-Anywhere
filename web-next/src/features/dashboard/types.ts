@@ -162,6 +162,8 @@ export type SessionView = {
   lastItemAt: string | null;
   lastItemOrderSeq: number | null;
   sortAt: string | null;
+  /** Older servers omit it; the sidebar then keeps unplaced sessions in list order. */
+  createdAt?: string | null;
   updatedSeq: number;
   effectiveRunMode?: "chat" | "terminal" | null;
   runtimeSettings?: Record<string, unknown> | null;
@@ -261,6 +263,8 @@ export type DashboardSnapshotMessage = {
   sessions: SessionView[];
   /** Live runtime instances, so device pages do not need a second source of truth. */
   runtimes?: DeviceRuntimeView[];
+  /** The user's dragged sidebar order, shared across devices. Older servers omit it. */
+  sidebarOrder?: SidebarOrder;
   sessionPages: {
     active: SessionPageInfo;
     archived: SessionPageInfo;
@@ -295,6 +299,16 @@ export type ProjectView = {
   lastActivityAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type SidebarOrderKind = "projects" | "sessions";
+
+/** Ids the user has placed by drag; ids missing from a list show first, newest created first. */
+export type SidebarOrder = Record<SidebarOrderKind, string[]>;
+
+export type SidebarOrderResponse = {
+  sidebarOrder: SidebarOrder;
+  serverTime: string;
 };
 
 export type ProjectListResponse = {

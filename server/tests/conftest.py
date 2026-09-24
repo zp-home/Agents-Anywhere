@@ -68,6 +68,7 @@ _API_ROOTS = (
     "/pairing",
     "/projects",
     "/sessions",
+    "/sidebar-order",
     "/ws-ticket",
 )
 _TRUNCATE_SQL = (
@@ -76,7 +77,7 @@ _TRUNCATE_SQL = (
     "sessions, projects, "
     "connector_runtime_catalogs, connector_protocol_capabilities, device_runtimes, "
     "connector_runtime_types, "
-    "pairing_codes, connectors, users, instance_settings "
+    "pairing_codes, connectors, user_sidebar_orders, users, instance_settings "
     "RESTART IDENTITY CASCADE"
 )
 

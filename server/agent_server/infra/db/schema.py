@@ -590,6 +590,17 @@ dashboard_settings = Table(
 )
 
 
+# Manual sidebar order per user (see migrations/versions/v2_37.py). Each list is
+# a JSON array of ids; a drag rewrites the whole list.
+user_sidebar_orders = Table(
+    "user_sidebar_orders",
+    metadata,
+    Column("user_id", Text, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("projects_json", Text, nullable=False, server_default="[]"),
+    Column("sessions_json", Text, nullable=False, server_default="[]"),
+    Column("updated_at", Text, nullable=False),
+)
+
 pairing_codes = Table(
     "pairing_codes",
     metadata,

@@ -22,10 +22,11 @@ export type CappedSessions<T> = {
 /**
  * Truncate a sorted session list for sidebar rendering.
  *
- * The caller passes the list already ordered by `compareSessionListOrder`,
- * which floats running sessions to the top, so the cap never hides a session
- * that is actively doing work. Pinned sessions render in their own section and
- * never reach here at all.
+ * The caller passes the list in the user's manual sidebar order, where new
+ * sessions enter at the top, so a freshly started session is never hidden.
+ * Rows the user dragged below the cut stay hidden even while running — that is
+ * where they asked for them to be. Pinned sessions render in their own section
+ * and never reach here at all.
  *
  * The session the user currently has open is always kept, even when it sorts
  * past the cut. Dropping it would leave the sidebar with no highlighted row

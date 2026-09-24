@@ -53,6 +53,8 @@ import type {
   SessionSelectionPatchResponse,
   SessionSnapshotResponse,
   SessionTimelineResponse,
+  SidebarOrderKind,
+  SidebarOrderResponse,
   TakeoverResponse,
   TerminalCreateRequest,
   TerminalListResult,
@@ -177,6 +179,15 @@ export class DashboardApi {
 
   listProjects(token: string): Promise<ProjectListResponse> {
     return this.client.get<ProjectListResponse>("/projects", { token });
+  }
+
+  getSidebarOrder(token: string): Promise<SidebarOrderResponse> {
+    return this.client.get<SidebarOrderResponse>("/sidebar-order", { token });
+  }
+
+  /** Replaces the whole stored list for `kind`. */
+  updateSidebarOrder(token: string, kind: SidebarOrderKind, ids: string[]): Promise<SidebarOrderResponse> {
+    return this.client.put<SidebarOrderResponse>("/sidebar-order", { kind, ids }, { token });
   }
 
   createProject(

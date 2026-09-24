@@ -23,6 +23,7 @@ from agent_server.infra.db.schema import (
     session_shares,
     sessions,
     timeline_items,
+    user_sidebar_orders,
     users,
 )
 
@@ -51,5 +52,6 @@ __all__ = [
     "session_shares",
     "sessions",
     "timeline_items",
+    "user_sidebar_orders",
     "users",
 ]
