@@ -108,14 +108,35 @@ function registerLanguages() {
   hljs.registerLanguage("yaml", yaml)
 }
 
+// Small LRU of highlighted HTML so re-rendering a long session does not re-run
+// highlight.js synchronously for every code block that has not changed.
+const HIGHLIGHT_CACHE_MAX_ENTRIES = 256
+const highlightCache = new Map<string, string>()
+
+function cachedHighlightHtml(code: string, language: string): string {
+  const cacheKey = `${language}\u0000${code}`
+  const cached = highlightCache.get(cacheKey)
+  if (cached !== undefined) {
+    highlightCache.delete(cacheKey)
+    highlightCache.set(cacheKey, cached)
+    return cached
+  }
+  const html = hljs.getLanguage(language)
+    ? hljs.highlight(code, { language, ignoreIllegals: true }).value
+    : hljs.highlight(code, { language: "plaintext", ignoreIllegals: true }).value
+  highlightCache.set(cacheKey, html)
+  if (highlightCache.size > HIGHLIGHT_CACHE_MAX_ENTRIES) {
+    const oldest = highlightCache.keys().next().value
+    if (oldest !== undefined) highlightCache.delete(oldest)
+  }
+  return html
+}
+
 export function highlightCode(code: string, language: string): ReactNode {
   registerLanguages()
   const normalized = normalizeLanguage(language)
   try {
-    const highlighted = hljs.getLanguage(normalized)
-      ? hljs.highlight(code, { language: normalized, ignoreIllegals: true }).value
-      : hljs.highlight(code, { language: "plaintext", ignoreIllegals: true }).value
-    return <span dangerouslySetInnerHTML={{ __html: highlighted }} />
+    return <span dangerouslySetInnerHTML={{ __html: cachedHighlightHtml(code, normalized) }} />
   } catch {
     return code
   }

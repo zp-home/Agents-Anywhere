@@ -314,6 +314,83 @@ function writeComposerDraft(sessionId: string, value: string) {
   }
 }
 
+type WorkspaceComposerInsertion = ReturnType<typeof useWorkspace>["composerInsertion"]
+
+// Owns the composer draft so each keystroke re-renders only the composer,
+// not SessionDetail and its (potentially very long) timeline.
+function SessionComposerWithDraft({
+  sessionId,
+  composerInsertion,
+  consumeComposerInsertion,
+  ...composerProps
+}: Omit<React.ComponentProps<typeof SessionComposer>, "value" | "onValueChange"> & {
+  sessionId: string
+  composerInsertion: WorkspaceComposerInsertion
+  consumeComposerInsertion: (id: number) => void
+}) {
+  const [composerDraftState, setComposerDraftState] = React.useState<ComposerDraftState>(() => ({
+    sessionId,
+    value: readComposerDraft(sessionId),
+  }))
+  const composerDraft = composerDraftState.sessionId === sessionId ? composerDraftState.value : ""
+
+  React.useEffect(() => {
+    setComposerDraftState({ sessionId, value: readComposerDraft(sessionId) })
+  }, [sessionId])
+
+  React.useEffect(() => {
+    writeComposerDraft(composerDraftState.sessionId, composerDraftState.value)
+  }, [composerDraftState])
+
+  const setComposerDraft = React.useCallback((value: string) => {
+    setComposerDraftState({ sessionId, value })
+  }, [sessionId])
+
+  React.useEffect(() => {
+    if (!composerInsertion || composerInsertion.sessionId !== sessionId) return
+    setComposerDraftState((current) => {
+      const currentValue = current.sessionId === sessionId ? current.value : readComposerDraft(sessionId)
+      const separator = currentValue.trim().length > 0 && !/\s$/.test(currentValue) ? " " : ""
+      return {
+        sessionId,
+        value: `${currentValue}${separator}${composerInsertion.text}`,
+      }
+    })
+    consumeComposerInsertion(composerInsertion.id)
+  }, [composerInsertion, consumeComposerInsertion, sessionId])
+
+  return <SessionComposer {...composerProps} value={composerDraft} onValueChange={setComposerDraft} />
+}
+
+// Reuses the previous group object when its items are unchanged, so memoized
+// timeline entries skip re-rendering on streaming flushes that touch other items.
+function useStableTimelineGroups(groups: TimelineGroup[]): TimelineGroup[] {
+  const previousRef = React.useRef(new Map<string, TimelineGroup>())
+  return React.useMemo(() => {
+    const previous = previousRef.current
+    const next = new Map<string, TimelineGroup>()
+    const stable = groups.map((group) => {
+      const key = timelineGroupKey(group)
+      const prior = previous.get(key)
+      const reused = prior && timelineGroupsEquivalent(prior, group) ? prior : group
+      next.set(key, reused)
+      return reused
+    })
+    previousRef.current = next
+    return stable
+  }, [groups])
+}
+
+function timelineGroupsEquivalent(a: TimelineGroup, b: TimelineGroup): boolean {
+  if (a.kind === "single" && b.kind === "single") return a.item === b.item
+  if (a.kind === "single" || b.kind === "single") return false
+  if (a.kind !== b.kind || a.key !== b.key) return false
+  if (a.kind === "agent-calls" && b.kind === "agent-calls" && a.parentItemId !== b.parentItemId) return false
+  const aItems = timelineGroupItems(a)
+  const bItems = timelineGroupItems(b)
+  return aItems.length === bItems.length && aItems.every((item, index) => item === bItems[index])
+}
+
 export function SessionDetail({
   token,
   sessionId,
@@ -364,10 +441,6 @@ export function SessionDetail({
   const [composerHeight, setComposerHeight] = React.useState(144)
   const [timelineGroupOpenByKey, setTimelineGroupOpenByKey] = React.useState<Record<string, boolean>>({})
   const [timelineItemOpenById, setTimelineItemOpenById] = React.useState<Record<string, boolean>>({})
-  const [composerDraftState, setComposerDraftState] = React.useState<ComposerDraftState>(() => ({
-    sessionId,
-    value: readComposerDraft(sessionId),
-  }))
   const timelineRef = React.useRef<HTMLDivElement | null>(null)
   const timelineContentRef = React.useRef<HTMLDivElement | null>(null)
   const composerContainerRef = React.useRef<HTMLDivElement | null>(null)
@@ -454,7 +527,6 @@ export function SessionDetail({
     }
   }, [runtimeState, runtimeStatus, session, state?.eventCursor, state?.serverTime])
 
-  const composerDraft = composerDraftState.sessionId === sessionId ? composerDraftState.value : ""
   const isLocalOptimisticSession = isOptimisticSession(sessionId)
   const hasInitialSessionState = state !== null
 
@@ -485,6 +557,16 @@ export function SessionDetail({
       return { ...current, [key]: open }
     })
   }, [])
+  // One stable handler per group key keeps memoized TimelineGroupEntry props referentially equal.
+  const timelineGroupOpenHandlersRef = React.useRef(new Map<string, (open: boolean) => void>())
+  const timelineGroupOpenChangeHandler = React.useCallback((key: string) => {
+    let handler = timelineGroupOpenHandlersRef.current.get(key)
+    if (!handler) {
+      handler = (open: boolean) => handleTimelineGroupOpenChange(key, open)
+      timelineGroupOpenHandlersRef.current.set(key, handler)
+    }
+    return handler
+  }, [handleTimelineGroupOpenChange])
   const handleTimelineItemOpenChange = React.useCallback((itemId: string, open: boolean) => {
     setTimelineItemOpenById((current) => {
       if (current[itemId] === open) return current
@@ -689,31 +771,6 @@ export function SessionDetail({
       return { ...current, items: preserveOptimisticItems(serverItems, optimisticItems) }
     })
   }, [getOptimisticItems, getOptimisticSessionState, isLocalOptimisticSession, sessionId])
-
-  React.useEffect(() => {
-    setComposerDraftState({ sessionId, value: readComposerDraft(sessionId) })
-  }, [sessionId])
-
-  React.useEffect(() => {
-    writeComposerDraft(composerDraftState.sessionId, composerDraftState.value)
-  }, [composerDraftState])
-
-  const setComposerDraft = React.useCallback((value: string) => {
-    setComposerDraftState({ sessionId, value })
-  }, [sessionId])
-
-  React.useEffect(() => {
-    if (!composerInsertion || composerInsertion.sessionId !== sessionId) return
-    setComposerDraftState((current) => {
-      const currentValue = current.sessionId === sessionId ? current.value : readComposerDraft(sessionId)
-      const separator = currentValue.trim().length > 0 && !/\s$/.test(currentValue) ? " " : ""
-      return {
-        sessionId,
-        value: `${currentValue}${separator}${composerInsertion.text}`,
-      }
-    })
-    consumeComposerInsertion(composerInsertion.id)
-  }, [composerInsertion, consumeComposerInsertion, sessionId])
 
   React.useEffect(() => {
     if (!state) {
@@ -1388,6 +1445,16 @@ export function SessionDetail({
       setResolvingActionId(null)
     }
   }
+  const handleRespondInteractionRef = React.useRef(handleRespondInteraction)
+  React.useLayoutEffect(() => {
+    handleRespondInteractionRef.current = handleRespondInteraction
+  })
+  // Stable identity for memoized timeline entries; always calls the latest handler.
+  const handleTimelineRespondInteraction = React.useCallback(
+    (noticeId: string, actionId: string, input?: Record<string, unknown>) =>
+      handleRespondInteractionRef.current(noticeId, actionId, input),
+    [],
+  )
 
   React.useLayoutEffect(() => {
     const pendingPrependScrollRestore = pendingPrependScrollRestoreRef.current
@@ -1591,10 +1658,10 @@ export function SessionDetail({
     resizeObserver.observe(node)
     return () => resizeObserver.disconnect()
   }, [session?.id])
-  const timelineGroups = React.useMemo(
+  const timelineGroups = useStableTimelineGroups(React.useMemo(
     () => groupTimelineItems((state?.items ?? []).filter(isVisibleTimelineItem), interactionTargetIds),
     [interactionTargetIds, state?.items],
-  )
+  ))
   const turnReviewDisplay = React.useMemo(() => {
     return buildTurnReviewDisplay(state?.session.id === sessionId ? state.items.filter(isVisibleTimelineItem) : [], {
       root: state?.session.cwd,
@@ -1700,9 +1767,9 @@ export function SessionDetail({
                     itemOpenById={timelineItemOpenById}
                     onGroupOpenChange={group.kind === "single"
                       ? undefined
-                      : (open) => handleTimelineGroupOpenChange(group.key, open)}
+                      : timelineGroupOpenChangeHandler(group.key)}
                     onItemOpenChange={handleTimelineItemOpenChange}
-                    onRespondInteraction={handleRespondInteraction}
+                    onRespondInteraction={handleTimelineRespondInteraction}
                   />
                   {completedTurnReview && onOpenReview ? (
                     <SessionReviewCard
@@ -1775,7 +1842,10 @@ export function SessionDetail({
           {onOpenReview && turnReviewDisplay.activeReview ? (
             <SessionReviewTag files={turnReviewDisplay.activeReview.files} onReview={() => onOpenReview()} />
           ) : null}
-          <SessionComposer
+          <SessionComposerWithDraft
+            sessionId={sessionId}
+            composerInsertion={composerInsertion}
+            consumeComposerInsertion={consumeComposerInsertion}
             token={token}
             session={session}
             runtimeState={runtimeState}
@@ -1784,14 +1854,12 @@ export function SessionDetail({
             sending={sending}
             interrupting={interrupting}
             takeoverBusy={takeoverBusy}
-            value={composerDraft}
             effectiveCapabilities={state?.effectiveCapabilities ?? null}
             modelCatalog={state?.catalogs.model ?? null}
             permissionCatalog={state?.catalogs.permission ?? null}
             runtimeCommands={runtimeCommands}
             commandsLoading={commandsLoading}
             onCommandQueryChange={handleCommandQueryChange}
-            onValueChange={setComposerDraft}
             onSelectionChange={handleSelectionChange}
             onSend={handleSend}
             onInterrupt={handleInterrupt}
@@ -2172,7 +2240,7 @@ function isToolRunBarItem(item: TimelineItem): boolean {
   return (item.content.kind ?? "artifact") !== "diff"
 }
 
-export function TimelineGroupEntry({
+function TimelineGroupEntryImpl({
   group,
   token,
   session,
@@ -2264,6 +2332,10 @@ export function TimelineGroupEntry({
     />
   )
 }
+
+// Memoized so a streaming flush or composer keystroke only re-renders the
+// groups whose props actually changed, instead of the whole loaded history.
+export const TimelineGroupEntry = React.memo(TimelineGroupEntryImpl)
 
 function ReconnectGroup({
   group,

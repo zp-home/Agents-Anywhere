@@ -103,3 +103,32 @@ test("streaming Markdown preserves the mounted Mermaid subtree", async () => {
     window.close()
   }
 })
+
+test("re-rendering a message keeps table cells and math spans mounted", async () => {
+  const { window } = new JSDOM('<div id="root"></div>')
+  const previous = { window: globalThis.window, document: globalThis.document, act: globalThis.IS_REACT_ACT_ENVIRONMENT }
+  globalThis.window = window
+  globalThis.document = window.document
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  const root = createRoot(window.document.getElementById("root"))
+  const text = "| a | b |\n| - | - |\n| $x^2$ | 2 |\n\n结论 $y$"
+  const renderMessage = async props => act(() => root.render(React.createElement(context.exports.MarkdownText, { text, ...props })))
+  try {
+    await renderMessage({})
+    const cell = window.document.querySelector("td")
+    const mathSpan = window.document.querySelector(".katex")
+    assert.ok(cell)
+    assert.ok(mathSpan)
+    // A parent re-render with other props must not remount the parsed tree
+    // (inline `components` overrides used to recreate every cell and KaTeX span).
+    await renderMessage({ inverted: true })
+    assert.equal(window.document.querySelector("td"), cell)
+    assert.equal(window.document.querySelector(".katex"), mathSpan)
+  } finally {
+    await act(() => root.unmount())
+    globalThis.window = previous.window
+    globalThis.document = previous.document
+    globalThis.IS_REACT_ACT_ENVIRONMENT = previous.act
+    window.close()
+  }
+})

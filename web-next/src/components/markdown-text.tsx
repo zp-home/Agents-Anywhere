@@ -24,7 +24,7 @@ import { openNativeFilePreviewWindow } from "@/lib/file-preview-window"
 import type { SessionView } from "@/features/dashboard/types"
 import { useTranslations } from "next-intl"
 
-export function MarkdownText({
+function MarkdownTextImpl({
   text,
   token,
   session,
@@ -37,6 +37,10 @@ export function MarkdownText({
 }) {
   return <MarkdownBody text={text} token={token} session={session} inverted={inverted} />
 }
+
+// Memoized: re-parsing markdown (remark + rehype + KaTeX + highlight.js) is the
+// most expensive part of rendering a message, so skip it unless props change.
+export const MarkdownText = React.memo(MarkdownTextImpl)
 
 // Keep the component identity stable while streamed message text changes.
 const MarkdownPre: Components["pre"] = ({ node, children, ...props }) => {
@@ -99,6 +103,51 @@ function MarkdownTableBlock({ children, ...props }: React.ComponentProps<"table"
   )
 }
 
+// Module-level plugin lists and static element overrides keep ReactMarkdown's
+// inputs referentially stable; inline definitions would force a remount of
+// every overridden element (including every KaTeX span) on each render.
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkMath, remarkStandaloneDisplayMath, remarkGitDirectiveBadges]
+const MARKDOWN_REHYPE_PLUGINS = [rehypeKatex]
+
+const MarkdownThead: Components["thead"] = ({ node: _node, children, ...props }) => (
+  <thead className="border-b border-border bg-muted/40" {...props}>
+    {children}
+  </thead>
+)
+
+const MarkdownTbody: Components["tbody"] = ({ node: _node, children, ...props }) => (
+  <tbody className="divide-y divide-border" {...props}>{children}</tbody>
+)
+
+const MarkdownTr: Components["tr"] = ({ node: _node, children, ...props }) => (
+  <tr className="transition-colors hover:bg-muted/25" {...props}>
+    {children}
+  </tr>
+)
+
+const MarkdownTh: Components["th"] = ({ node: _node, children, ...props }) => (
+  <th className="border-r border-border px-3 py-2 text-left font-medium text-foreground last:border-r-0" {...props}>
+    {children}
+  </th>
+)
+
+const MarkdownTd: Components["td"] = ({ node: _node, children, ...props }) => (
+  <td className="border-r border-border px-3 py-2 align-top text-foreground/90 last:border-r-0" {...props}>
+    {children}
+  </td>
+)
+
+const MarkdownSpan: Components["span"] = ({ node: _node, children, ...props }) => {
+  const directiveProps = props as React.HTMLAttributes<HTMLSpanElement> & {
+    "data-git-actions"?: string
+    "data-git-directive"?: string
+  }
+  if (directiveProps["data-git-directive"] === "true") {
+    return <GitDirectiveBadge actions={directiveProps["data-git-actions"]} />
+  }
+  return <span {...props}>{children}</span>
+}
+
 function MarkdownBody({
   text,
   token,
@@ -112,6 +161,89 @@ function MarkdownBody({
 }) {
   const openFilePreview = useSessionFilePreviewOpener()
 
+  const components = React.useMemo<Components>(() => ({
+    pre: MarkdownPre,
+    code({ className, children, node: _node, ...props }) {
+      const previewPath = typeof children === "string" ? parseInlineFileRef(children) : null
+      if (previewPath && token && session) {
+        return (
+          <span
+            role="button"
+            tabIndex={0}
+            className="inline-flex max-w-full items-baseline gap-0.5 rounded-none bg-transparent p-0 align-baseline text-[1em] text-inherit underline underline-offset-2 hover:text-foreground"
+            onClick={() => openSessionFilePreview(token, session, previewPath, openFilePreview)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                openSessionFilePreview(token, session, previewPath, openFilePreview)
+              }
+            }}
+          >
+            <span className="min-w-0 truncate">{children}</span>
+            <ExternalLink className="relative -top-0.5 size-3 shrink-0" />
+          </span>
+        )
+      }
+      return (
+        <code
+          className={cn(
+            className,
+            "rounded-md bg-secondary px-1.5 py-0.5 text-secondary-foreground",
+          )}
+          {...props}
+        >
+          {children}
+        </code>
+      )
+    },
+    a({ href, children, node: _node, ...props }) {
+      const childText = textFromReactChildren(children)
+      const path = href && isMarkdownFilePath(href)
+        ? stripLineSuffix(href)
+        : parseInlineFileRef(childText)
+      if (!path || !token || !session) {
+        return (
+          <a href={href} target="_blank" rel="noreferrer" {...props}>
+            {children}
+          </a>
+        )
+      }
+      return (
+        <span
+          role="button"
+          tabIndex={0}
+          className="inline-flex max-w-full items-baseline gap-0.5 align-baseline text-left underline underline-offset-2 hover:text-foreground"
+          onClick={() => openSessionFilePreview(token, session, path, openFilePreview)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              openSessionFilePreview(token, session, path, openFilePreview)
+            }
+          }}
+        >
+          <span className="min-w-0 truncate">{children}</span>
+          <ExternalLink className="relative -top-0.5 size-3 shrink-0" />
+        </span>
+      )
+    },
+    table: MarkdownTable,
+    thead: MarkdownThead,
+    tbody: MarkdownTbody,
+    tr: MarkdownTr,
+    th: MarkdownTh,
+    td: MarkdownTd,
+    span: MarkdownSpan,
+  }), [openFilePreview, session, token])
+
+  // Parse only when the text or link context changes, not on every parent render.
+  const rendered = React.useMemo(() => (
+    <ReactMarkdown
+      remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+      rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+      components={components}
+    >
+      {text}
+    </ReactMarkdown>
+  ), [components, text])
+
   return (
     <div
       className={cn(
@@ -121,118 +253,7 @@ function MarkdownBody({
           : "[&_pre]:border-border",
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkStandaloneDisplayMath, remarkGitDirectiveBadges]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
-          pre: MarkdownPre,
-          code({ className, children, node: _node, ...props }) {
-            const previewPath = typeof children === "string" ? parseInlineFileRef(children) : null
-            if (previewPath && token && session) {
-              return (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="inline-flex max-w-full items-baseline gap-0.5 rounded-none bg-transparent p-0 align-baseline text-[1em] text-inherit underline underline-offset-2 hover:text-foreground"
-                  onClick={() => openSessionFilePreview(token, session, previewPath, openFilePreview)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      openSessionFilePreview(token, session, previewPath, openFilePreview)
-                    }
-                  }}
-                >
-                  <span className="min-w-0 truncate">{children}</span>
-                  <ExternalLink className="relative -top-0.5 size-3 shrink-0" />
-                </span>
-              )
-            }
-            return (
-              <code
-                className={cn(
-                  className,
-                  "rounded-md bg-secondary px-1.5 py-0.5 text-secondary-foreground",
-                )}
-                {...props}
-              >
-                {children}
-              </code>
-            )
-          },
-          a({ href, children, node: _node, ...props }) {
-            const childText = textFromReactChildren(children)
-            const path = href && isMarkdownFilePath(href)
-              ? stripLineSuffix(href)
-              : parseInlineFileRef(childText)
-            if (!path || !token || !session) {
-              return (
-                <a href={href} target="_blank" rel="noreferrer" {...props}>
-                  {children}
-                </a>
-              )
-            }
-            return (
-              <span
-                role="button"
-                tabIndex={0}
-                className="inline-flex max-w-full items-baseline gap-0.5 align-baseline text-left underline underline-offset-2 hover:text-foreground"
-                onClick={() => openSessionFilePreview(token, session, path, openFilePreview)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    openSessionFilePreview(token, session, path, openFilePreview)
-                  }
-                }}
-              >
-                <span className="min-w-0 truncate">{children}</span>
-                <ExternalLink className="relative -top-0.5 size-3 shrink-0" />
-              </span>
-            )
-          },
-          table: MarkdownTable,
-          thead({ children, ...props }) {
-            return (
-              <thead className="border-b border-border bg-muted/40" {...props}>
-                {children}
-              </thead>
-            )
-          },
-          tbody({ children, ...props }) {
-            return <tbody className="divide-y divide-border" {...props}>{children}</tbody>
-          },
-          tr({ children, ...props }) {
-            return (
-              <tr className="transition-colors hover:bg-muted/25" {...props}>
-                {children}
-              </tr>
-            )
-          },
-          th({ children, ...props }) {
-            return (
-              <th className="border-r border-border px-3 py-2 text-left font-medium text-foreground last:border-r-0" {...props}>
-                {children}
-              </th>
-            )
-          },
-          td({ children, ...props }) {
-            return (
-              <td className="border-r border-border px-3 py-2 align-top text-foreground/90 last:border-r-0" {...props}>
-                {children}
-              </td>
-            )
-          },
-          span({ children, ...props }) {
-            const directiveProps = props as React.HTMLAttributes<HTMLSpanElement> & {
-              "data-git-actions"?: string
-              "data-git-directive"?: string
-            }
-            if (directiveProps["data-git-directive"] === "true") {
-              return <GitDirectiveBadge actions={directiveProps["data-git-actions"]} />
-            }
-            return <span {...props}>{children}</span>
-          },
-        }}
-      >
-        {text}
-      </ReactMarkdown>
+      {rendered}
     </div>
   )
 }
@@ -573,6 +594,7 @@ function MarkdownCodeBlock({ code, language }: { code: string; language: string 
   const tSession = useTranslations("dashboard.session")
   const tCommon = useTranslations("common")
   const [copied, setCopied] = React.useState(false)
+  const highlighted = React.useMemo(() => highlightCode(code, language), [code, language])
   const source = (
     <ScrollArea
       contentWide
@@ -580,7 +602,7 @@ function MarkdownCodeBlock({ code, language }: { code: string; language: string 
       viewportProps={{ className: "max-h-96" }}
     >
       <pre className="w-max min-w-full p-3 text-sm leading-relaxed">
-        <code>{highlightCode(code, language)}</code>
+        <code>{highlighted}</code>
       </pre>
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
