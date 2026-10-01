@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -133,6 +134,9 @@ import com.agentsanywhere.app.feature.sessions.firstMessageRequest
 import com.agentsanywhere.app.feature.sessions.NewSessionModelCatalog
 import com.agentsanywhere.app.feature.sessions.NewSessionPermissionCatalog
 import com.agentsanywhere.app.feature.terminal.RemoteTerminalForegroundService
+import com.agentsanywhere.app.feature.voice.VoiceCallRegistry
+import com.agentsanywhere.app.feature.voice.VoiceCallService
+import com.agentsanywhere.app.ui.screens.voice.VoiceCallScreen
 import com.agentsanywhere.app.feature.terminal.RemoteTerminalPool
 import com.agentsanywhere.app.model.AgentDevice
 import com.agentsanywhere.app.model.AgentSession
@@ -879,6 +883,39 @@ fun SessionDetailScreen(
                     showError(message)
                 }
         }
+    }
+
+    val voiceCall by VoiceCallRegistry.state.collectAsState()
+    val activeVoiceCall = voiceCall?.takeIf { sessionId != null && it.sessionId == sessionId }
+    var voiceOverlayHidden by remember(sessionId) { mutableStateOf(false) }
+    LaunchedEffect(activeVoiceCall == null) {
+        if (activeVoiceCall == null) voiceOverlayHidden = false
+    }
+
+    fun launchVoiceCall() {
+        val id = sessionId ?: return
+        voiceOverlayHidden = false
+        VoiceCallService.start(context, id, state.session?.title.orEmpty())
+    }
+
+    val voicePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        val micGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (micGranted) launchVoiceCall() else showError(context.getString(R.string.voice_call_permission_denied))
+    }
+
+    fun startVoiceCall() {
+        if (activeVoiceCall != null) {
+            voiceOverlayHidden = false
+            return
+        }
+        val missing = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) launchVoiceCall() else voicePermissionLauncher.launch(missing.toTypedArray())
     }
 
     fun interrupt() {
@@ -1778,6 +1815,10 @@ fun SessionDetailScreen(
                                     onReadOnlyClick = ::handleReadOnlyComposerClick,
                                     onSend = ::sendDraft,
                                     onInterrupt = ::interrupt,
+                                    voiceCallEnabled = activeVoiceCall != null || (
+                                        !isPreparedSession && connectorOnline && inputEnabled && canUseSendMessage
+                                    ),
+                                    onStartVoiceCall = ::startVoiceCall,
                                 )
                             }
                         }
@@ -1912,6 +1953,20 @@ fun SessionDetailScreen(
             onDownload = ::saveAttachment,
             onDismiss = { previewImage = null },
         )
+    }
+
+    if (activeVoiceCall != null && !voiceOverlayHidden) {
+        Dialog(
+            onDismissRequest = { voiceOverlayHidden = true },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            VoiceCallScreen(
+                state = activeVoiceCall,
+                onTalk = { VoiceCallService.talk(context) },
+                onHangUp = { VoiceCallService.hangUp(context) },
+                onSelectRecognition = { mode -> VoiceCallService.setRecognition(context, mode) },
+            )
+        }
     }
 }
 

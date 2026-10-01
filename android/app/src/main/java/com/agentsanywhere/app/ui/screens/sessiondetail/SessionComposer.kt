@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +62,8 @@ import androidx.compose.ui.window.Popup
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.ui.designsystem.LocalAAColors
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Phone
 import kotlinx.coroutines.delay
 
 @Composable
@@ -110,6 +113,8 @@ internal fun MessageComposer(
     onSend: () -> Unit,
     onInterrupt: () -> Unit,
     modifier: Modifier = Modifier,
+    voiceCallEnabled: Boolean = false,
+    onStartVoiceCall: () -> Unit = {},
 ) {
     val colors = LocalAAColors.current
     val surface = if (darkMode) colors.raisedSurface else Color(0xF2FFFFFF)
@@ -206,6 +211,8 @@ internal fun MessageComposer(
                 onOpenAttachMenu = { if (attachmentsEnabled) showAttachMenu = true },
                 onSend = onSend,
                 onInterrupt = onInterrupt,
+                voiceCallEnabled = voiceCallEnabled,
+                onStartVoiceCall = onStartVoiceCall,
             )
         }
     }
@@ -484,6 +491,8 @@ private fun ComposerActions(
     onOpenAttachMenu: () -> Unit,
     onSend: () -> Unit,
     onInterrupt: () -> Unit,
+    voiceCallEnabled: Boolean,
+    onStartVoiceCall: () -> Unit,
 ) {
     val surface = if (darkMode) LocalAAColors.current.raisedSurface else Color.White
     val border = if (darkMode) Color(0xFF27272A) else Color.Transparent
@@ -567,35 +576,58 @@ private fun ComposerActions(
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(primaryActionSurface)
-                .then(
-                    if (primaryActionEnabled) {
-                        Modifier.noRippleClickable(
-                            onClick = if (showInterrupt) onInterrupt else onSend,
-                        )
-                    } else {
-                        Modifier
-                    },
-                ),
-            contentAlignment = Alignment.Center,
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            when {
-                primaryActionBusy -> CircularProgressIndicator(
-                    color = primaryActionIcon,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(17.dp),
-                )
-                showInterrupt -> Box(
+            if (voiceCallEnabled) {
+                Box(
                     modifier = Modifier
-                        .size(10.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(primaryActionIcon),
-                )
-                else -> ArrowUpGlyph(primaryActionIcon)
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(surface)
+                        .border(1.dp, if (darkMode) border else Color(0xFFE8E5DE), CircleShape)
+                        .noRippleClickable(onClick = onStartVoiceCall),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Lucide.Phone,
+                        contentDescription = stringResource(R.string.voice_call_start),
+                        tint = icon,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(primaryActionSurface)
+                    .then(
+                        if (primaryActionEnabled) {
+                            Modifier.noRippleClickable(
+                                onClick = if (showInterrupt) onInterrupt else onSend,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    primaryActionBusy -> CircularProgressIndicator(
+                        color = primaryActionIcon,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    showInterrupt -> Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(primaryActionIcon),
+                    )
+                    else -> ArrowUpGlyph(primaryActionIcon)
+                }
             }
         }
     }

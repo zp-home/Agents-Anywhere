@@ -114,6 +114,7 @@ The compose file uses:
 
 - `postgres-next` service for PostgreSQL 17
 - `redis-next` service for cross-instance coordination, Pub/Sub, and the live Timeline sequencer/write buffer
+- `asr-next` service for voice-call speech recognition (SenseVoice-Small, see [Speech recognition](#speech-recognition))
 - `migrate-next` one-shot service that upgrades the database before server startup
 - `server-next` service for the FastAPI backend and statically exported Web UI
 - `agents-anywhere-pg-next` volume for PostgreSQL data
@@ -192,6 +193,32 @@ flush (normally up to the configured flush interval). In both cases, the durable
 PostgreSQL allocation watermark prevents revision reuse but cannot recover a
 lost payload, so the local fallback is for development rather than a durable or
 multi-instance deployment.
+
+### Speech recognition
+
+`docker/asr` builds the speech recognition service used by the Android voice
+call "server" mode ([Speech API](../docs/api/speech.md)). It serves
+SenseVoice-Small (int8, Chinese / English / Cantonese / Japanese / Korean)
+through `sherpa-onnx` on CPU; the image downloads the model from the
+`k2-fsa/sherpa-onnx` `asr-models` release at build time and keeps only
+`model.int8.onnx` and `tokens.txt`.
+
+- Image about 750 MB; resident memory about 350 MB after start.
+- One request is decoded at a time; `ASR_NUM_THREADS` (default `2`) sets the CPU
+  threads per decode. A 7 s utterance decodes in about 0.35 s on a desktop CPU.
+- `server-next` reaches it through `AGENT_SERVER_ASR_URL=http://asr-next:8000`.
+  Without that variable, or while the service is down, `GET /api/v2/speech/status`
+  reports `available: false` and clients keep using on-device recognition.
+- The service has no authentication; do not publish its port. Only the Server
+  talks to it.
+
+For a Server running on the host (`./local-up.sh`), start the service from
+`docker-compose.local.yml` and point the Server at the published port:
+
+```bash
+docker compose -f docker/docker-compose.local.yml up -d --build asr
+export AGENT_SERVER_ASR_URL=http://127.0.0.1:58765
+```
 
 ### v2.24 rollout and rollback
 

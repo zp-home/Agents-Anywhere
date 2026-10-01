@@ -45,6 +45,39 @@ prevents an in-place update of an installed app signed with another key.
 `local.properties` remains machine-specific and ignored. The manifest allows
 HTTP for local/self-hosted addresses; use HTTPS for public service endpoints.
 
+## Voice call mode
+
+The phone button next to Send starts a hands-free call with the open session. It
+is shown only when the composer can send (takeover on, connector online,
+`session.send_message` usable). The call runs in `VoiceCallService`, a
+`microphone` foreground service with a partial wake lock, so it keeps listening,
+receiving session events and speaking with the screen locked. The notification
+has **Talk** and **Hang up** actions.
+
+- Recognition has two modes, switchable on the call screen and remembered:
+  **Phone** uses the phone's own speech service (`SpeechRecognizer`) in the
+  system language; **Server** records 16 kHz audio, cuts each utterance with an
+  energy-based end-of-speech detector (1.2 s of silence) and sends it to the
+  Server's [Speech API](../docs/api/speech.md) (SenseVoice-Small). Server mode is
+  offered only when `/speech/status` reports `available`; phones without a
+  recognition service fall back to it automatically. Replies are spoken with
+  the phone's text-to-speech engine.
+- After the reply is read, a beep means the app is listening; a pause ends the
+  utterance and it is sent. Each message is prefixed with a short `[Voice mode]`
+  instruction asking the agent to open with a spoken summary; the prefix is
+  visible in the timeline.
+- Replies are read from the agent's text items of that turn. Code blocks and
+  tables are replaced by a spoken marker, links and markdown syntax are
+  dropped, long replies stop after about 600 characters, and changed files and
+  commands are summarized.
+- Commands (whole utterance only): stop/停止, approve/同意, reject/拒绝,
+  repeat/重复, hang up/挂断. Approve and reject answer the oldest open approval;
+  approvals that need form input must be answered on screen.
+- While the agent runs the microphone stays closed. Press the headset button or
+  **Talk** to say a command, or to skip the speech that is playing.
+- Vendor battery savers can still stop foreground services; allow Agents
+  Anywhere to run in the background for long calls.
+
 ## Application updates
 
 After entering the signed-in app, Android reads the saved server's

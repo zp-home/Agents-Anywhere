@@ -39,6 +39,15 @@ services:
       timeout: 5s
       retries: 30
 
+  asr:
+    build:
+      context: asr
+    image: agents-anywhere-asr:sensevoice-small
+    environment:
+      ASR_NUM_THREADS: ${ASR_NUM_THREADS:-2}
+    ports:
+      - "127.0.0.1:${AGENTS_ANYWHERE_ASR_PORT:-58765}:8000"
+
 volumes:
   postgres-data:
   redis-data:

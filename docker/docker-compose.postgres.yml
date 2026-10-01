@@ -39,6 +39,14 @@ services:
       timeout: 5s
       retries: 5
 
+  asr-next:
+    build:
+      context: asr
+    image: agents-anywhere-asr:sensevoice-small
+    restart: unless-stopped
+    environment:
+      ASR_NUM_THREADS: ${ASR_NUM_THREADS:-2}
+
   migrate-next:
     build:
       context: ..
@@ -62,6 +70,8 @@ services:
         condition: service_completed_successfully
       redis-next:
         condition: service_healthy
+      asr-next:
+        condition: service_started
     environment:
       AGENT_SERVER_DB_BACKEND: postgres
       AGENT_SERVER_DB_URL: postgresql+asyncpg://agents_anywhere:${POSTGRES_PASSWORD:-agents_anywhere_dev_password}@postgres-next:5432/agents_anywhere
@@ -70,6 +80,7 @@ services:
       AGENT_SERVER_DB_POOL_TIMEOUT: ${AGENT_SERVER_DB_POOL_TIMEOUT:-30}
       AGENT_SERVER_DB_POOL_RECYCLE: ${AGENT_SERVER_DB_POOL_RECYCLE:-1800}
       AGENT_SERVER_REDIS_URL: redis://redis-next:6379/0
+      AGENT_SERVER_ASR_URL: http://asr-next:8000
       AGENT_SERVER_REDIS_CONNECT_TIMEOUT: ${AGENT_SERVER_REDIS_CONNECT_TIMEOUT:-5}
       AGENT_SERVER_TIMELINE_REVISION_LEASE_SIZE: ${AGENT_SERVER_TIMELINE_REVISION_LEASE_SIZE:-4096}
       AGENT_SERVER_FILES_BACKEND: local

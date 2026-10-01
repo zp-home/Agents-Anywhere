@@ -178,6 +178,7 @@ class ApiClient(
         path: String,
         files: List<UploadFilePart>,
         authorizationToken: String? = null,
+        fieldName: String = "files",
     ): JSONObject {
         return try {
             val endpoint = URL(apiUrl(serverUrl, path))
@@ -199,7 +200,7 @@ class ApiClient(
                     files.forEach { file ->
                         output.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
                         output.write(
-                            "Content-Disposition: form-data; name=\"files\"; filename=\"${file.name.httpQuoted()}\"\r\n"
+                            "Content-Disposition: form-data; name=\"${fieldName.httpQuoted()}\"; filename=\"${file.name.httpQuoted()}\"\r\n"
                                 .toByteArray(Charsets.UTF_8),
                         )
                         output.write("Content-Type: ${file.mediaType.ifBlank { "application/octet-stream" }}\r\n\r\n".toByteArray(Charsets.UTF_8))

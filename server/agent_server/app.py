@@ -38,11 +38,13 @@ from agent_server.api import (
     sessions_fs,
     sessions_terminal,
     shares,
+    speech,
 )
 from agent_server.core.api_namespace import API_V2_PREFIX
 from agent_server.core.process_settings import ProcessSettings
 from agent_server.core.setup_token import SetupToken
 from agent_server.core.utc import utc_now
+from agent_server.infra.asr_client import AsrHttpClient
 from agent_server.infra.connector_rpc import ConnectorRpcManager
 from agent_server.infra.db.migrations import (
     database_schema_version,
@@ -168,9 +170,13 @@ def create_app(
                                 try:
                                     await app.state.redis.close()
                                 finally:
-                                    await app.state.store.close()
+                                    try:
+                                        await app.state.store.close()
+                                    finally:
+                                        if app.state.speech_recognizer is not None:
+                                            await app.state.speech_recognizer.aclose()
 
-    app = FastAPI(title="Agent Server", version="2.0.3", lifespan=lifespan)
+    app = FastAPI(title="Agent Server", version="2.1.0", lifespan=lifespan)
     app.add_exception_handler(
         ConnectorServiceError,
         error_handlers.connector_service_error_handler,
@@ -267,6 +273,7 @@ def create_app(
     )
     app.state.ws_tickets = ClientWsTicketManager(app.state.redis)
     app.state.setup_token = SetupToken()
+    app.state.speech_recognizer = AsrHttpClient.from_environment()
     app.state.started_at_iso = utc_now()
     app.state.started_at_monotonic = time.monotonic()
 
@@ -354,6 +361,7 @@ def create_app(
     app.include_router(sessions.router, prefix=API_V2_PREFIX)
     app.include_router(sessions_fs.router, prefix=API_V2_PREFIX)
     app.include_router(sessions_terminal.router, prefix=API_V2_PREFIX)
+    app.include_router(speech.router, prefix=API_V2_PREFIX)
 
     static_dir = os.environ.get("AGENT_SERVER_STATIC_DIR")
     if static_dir:
