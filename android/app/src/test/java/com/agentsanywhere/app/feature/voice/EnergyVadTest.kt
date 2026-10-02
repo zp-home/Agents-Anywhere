@@ -89,4 +89,18 @@ class EnergyVadTest {
         // Speech starts with frame 26, i.e. 25 frames x 20 ms into the recording.
         assertEquals(25 * 20, vad.stats.speechStartMs)
     }
+
+    @Test
+    fun detectsSoftSpeakerBelowFormerMinimumThreshold() {
+        // RMS ~141: below the former 200 minimum, so speaking softly was reported as no speech.
+        val quiet = List(25) { frame(30.0) }
+        val softSpeech = List(50) { frame(200.0, it) }
+        val silence = List(80) { frame(30.0) }
+        val vad = EnergyVad()
+        val (result, _) = feed(vad, quiet + softSpeech + silence)
+
+        assertTrue(result is EnergyVad.Result.Utterance)
+        assertEquals(EnergyVad.EndReason.Silence, (result as EnergyVad.Result.Utterance).endReason)
+        assertEquals(25 * 20, vad.stats.speechStartMs)
+    }
 }

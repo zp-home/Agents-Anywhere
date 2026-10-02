@@ -23,8 +23,8 @@ class EnergyVad(
     private val maxUtteranceMs: Int = 55_000,
     private val preRollMs: Int = 300,
     private val floorWindowMs: Int = 1_500,
-    private val minThreshold: Double = 200.0,
-    private val startFactor: Double = 2.5,
+    private val minThreshold: Double = 100.0,
+    private val startFactor: Double = 2.0,
     private val endFloorFactor: Double = 1.75,
     private val endPeakRatio: Double = 0.25,
 ) {
