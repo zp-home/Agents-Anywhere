@@ -758,6 +758,10 @@
     <string name="voice_call_recording_hint">Hearing you · %1$.1f s</string>
     <string name="voice_call_no_speech_heard">Didn\'t hear any speech last time</string>
     <string name="voice_call_say_recognition_failed">Speech recognition failed: %1$s</string>
+    <string name="voice_call_tts_problem">Read-aloud unavailable: %1$s</string>
+    <string name="voice_call_bubble_paused">Paused</string>
+    <string name="voice_call_bubble_permission_hint">Allow display over other apps to see a floating call window when you leave this screen.</string>
+    <string name="voice_call_bubble_permission_enable">Allow</string>
     <string name="voice_call_recognition_label">Recognition</string>
     <string name="voice_call_recognition_system">Phone</string>
     <string name="voice_call_recognition_server">Server</string>

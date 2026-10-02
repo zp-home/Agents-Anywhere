@@ -756,6 +756,10 @@
     <string name="voice_call_recording_hint">听到你在说话 · %1$.1f 秒</string>
     <string name="voice_call_no_speech_heard">上一句没听到说话</string>
     <string name="voice_call_say_recognition_failed">识别失败：%1$s</string>
+    <string name="voice_call_tts_problem">播报不可用：%1$s</string>
+    <string name="voice_call_bubble_paused">已暂停</string>
+    <string name="voice_call_bubble_permission_hint">开启悬浮窗权限后，离开通话界面时会显示通话小窗。</string>
+    <string name="voice_call_bubble_permission_enable">去开启</string>
     <string name="voice_call_recognition_label">识别</string>
     <string name="voice_call_recognition_system">手机</string>
     <string name="voice_call_recognition_server">服务器</string>

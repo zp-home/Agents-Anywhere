@@ -36,6 +36,7 @@ import com.agentsanywhere.app.feature.auth.AuthSessionStore
 import com.agentsanywhere.app.feature.auth.WebLoginState
 import com.agentsanywhere.app.feature.auth.WebLoginViewModel
 import com.agentsanywhere.app.feature.update.AppUpdateViewModel
+import com.agentsanywhere.app.feature.voice.VoiceCallRegistry
 import com.agentsanywhere.app.feature.devices.DevicesController
 import com.agentsanywhere.app.feature.devices.DevicePairingMonitor
 import com.agentsanywhere.app.feature.files.FilesController
@@ -485,6 +486,15 @@ fun AgentsAnywhereApp(
                 }
             },
         ).join()
+    }
+
+    val voiceCallShowRequests by VoiceCallRegistry.showCallRequests.collectAsState()
+    LaunchedEffect(voiceCallShowRequests) {
+        if (voiceCallShowRequests == 0) return@LaunchedEffect
+        val callSessionId = VoiceCallRegistry.state.value?.sessionId ?: return@LaunchedEffect
+        preparedSessionDraft = null
+        selectedSessionId = callSessionId
+        destinationName = AppDestination.SessionDetail.name
     }
 
     LaunchedEffect(oauthCallbackUri) {

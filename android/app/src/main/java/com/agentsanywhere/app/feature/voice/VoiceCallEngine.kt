@@ -196,11 +196,32 @@ class VoiceCallEngine(
                 return true
             }
             ticks += 1
+            // The session socket does not always deliver the final idle state (the session
+            // screen only caught it after reconnecting), so pull runtime state while waiting.
+            if (ticks % RUNTIME_REFRESH_EVERY_TICKS == 0) refreshRuntimeState()
             if (!sawActive && ticks * POLL_INTERVAL_MS >= NOT_STARTED_TIMEOUT_MS) {
                 say(phrases.notStarted)
                 return true
             }
             if (ticks % WORKING_CUE_EVERY_TICKS == 0) cues.working()
+        }
+    }
+
+    private suspend fun refreshRuntimeState() {
+        val requestState = detail
+        val refreshed = runCatching { controller.refreshRuntimeLiveDomains(sessionId, requestState) }
+            .onFailure { error -> Log.w(TAG, "runtime refresh failed: ${error.message}") }
+            .getOrNull() ?: return
+        updateDetail("refresh") { current -> controller.mergeRuntimeLiveState(current, requestState, refreshed) }
+    }
+
+    /** Applies [transform] to [detail] and logs runtime status changes with their source. */
+    private fun updateDetail(source: String, transform: (SessionDetailState) -> SessionDetailState) {
+        val before = VoiceTurn.status(detail)
+        detail = transform(detail)
+        val after = VoiceTurn.status(detail)
+        if (after != before) {
+            Log.i(TAG, "runtime status $before -> $after via $source (updatedSeq=${detail.runtime.updatedSeq})")
         }
     }
 
@@ -368,7 +389,9 @@ class VoiceCallEngine(
         cursor = { withContext(Dispatchers.Main.immediate) { detail.realtime.cursor } },
         onEvents = { events ->
             withContext(Dispatchers.Main.immediate) {
-                detail = controller.applyRealtimeEvents(detail, events, emptyList())
+                updateDetail("event ${events.map { it.type }.distinct()}") { current ->
+                    controller.applyRealtimeEvents(current, events, emptyList())
+                }
             }
         },
         onCursorAdvanced = { cursor ->
@@ -382,7 +405,9 @@ class VoiceCallEngine(
             val current = withContext(Dispatchers.Main.immediate) { detail }
             controller.loadInitialSnapshot(sessionId, emptyList(), current).onSuccess { loaded ->
                 withContext(Dispatchers.Main.immediate) {
-                    detail = controller.mergeSnapshotWithLiveState(sessionId, loaded, detail).completeSnapshotLoad()
+                    updateDetail("snapshot") { current ->
+                        controller.mergeSnapshotWithLiveState(sessionId, loaded, current).completeSnapshotLoad()
+                    }
                 }
             }
         },
@@ -391,7 +416,9 @@ class VoiceCallEngine(
             val refreshed = controller.refreshRuntimeLiveDomains(sessionId, requestState)
             withContext(Dispatchers.Main.immediate) {
                 if (realtime.isCurrentRuntimeRefresh(connectionGeneration, refreshGeneration)) {
-                    detail = controller.mergeRuntimeLiveState(detail, requestState, refreshed)
+                    updateDetail("socket refresh") { current ->
+                        controller.mergeRuntimeLiveState(current, requestState, refreshed)
+                    }
                 }
             }
         },
@@ -405,6 +432,7 @@ class VoiceCallEngine(
         const val POLL_INTERVAL_MS = 1_000L
         const val CUE_SETTLE_MS = 200L
         const val WORKING_CUE_EVERY_TICKS = 8
+        const val RUNTIME_REFRESH_EVERY_TICKS = 5
         const val NOT_STARTED_TIMEOUT_MS = 30_000L
         const val APPROVAL_ATTEMPTS = 3
         const val MAX_NOTICE_CHARS = 200

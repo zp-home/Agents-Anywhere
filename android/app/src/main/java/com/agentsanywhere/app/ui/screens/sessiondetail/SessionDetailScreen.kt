@@ -891,6 +891,10 @@ fun SessionDetailScreen(
     LaunchedEffect(activeVoiceCall == null) {
         if (activeVoiceCall == null) voiceOverlayHidden = false
     }
+    val voiceCallShowRequests by VoiceCallRegistry.showCallRequests.collectAsState()
+    LaunchedEffect(voiceCallShowRequests) {
+        if (voiceCallShowRequests > 0) voiceOverlayHidden = false
+    }
 
     fun launchVoiceCall() {
         val id = sessionId ?: return

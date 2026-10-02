@@ -64,6 +64,24 @@ object VoiceCallRegistry {
     private val mutable = MutableStateFlow<VoiceCallUiState?>(null)
     val state: StateFlow<VoiceCallUiState?> = mutable.asStateFlow()
 
+    private val screenVisible = MutableStateFlow(false)
+
+    /** True while the full-screen call view is on screen; otherwise the floating bubble shows. */
+    val callScreenVisible: StateFlow<Boolean> = screenVisible.asStateFlow()
+
+    private val showRequests = MutableStateFlow(0)
+
+    /** Incremented when the user asks to return to the call (bubble tap). */
+    val showCallRequests: StateFlow<Int> = showRequests.asStateFlow()
+
+    fun setCallScreenVisible(visible: Boolean) {
+        screenVisible.value = visible
+    }
+
+    fun requestShowCall() {
+        showRequests.value += 1
+    }
+
     internal fun publish(state: VoiceCallUiState?) {
         mutable.value = state
     }

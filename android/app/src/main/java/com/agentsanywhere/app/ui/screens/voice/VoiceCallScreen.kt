@@ -1,5 +1,8 @@
 package com.agentsanywhere.app.ui.screens.voice
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,23 +18,34 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.feature.voice.VoiceCallPhase
+import com.agentsanywhere.app.feature.voice.VoiceCallRegistry
 import com.agentsanywhere.app.feature.voice.VoiceCallUiState
 import com.agentsanywhere.app.feature.voice.VoiceRecognitionMode
 import com.agentsanywhere.app.ui.designsystem.LocalAAColors
@@ -50,6 +64,29 @@ fun VoiceCallScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAAColors.current
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var canShowBubble by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    VoiceCallRegistry.setCallScreenVisible(true)
+                    canShowBubble = Settings.canDrawOverlays(context)
+                }
+                Lifecycle.Event.ON_STOP -> VoiceCallRegistry.setCallScreenVisible(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            VoiceCallRegistry.setCallScreenVisible(true)
+        }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            VoiceCallRegistry.setCallScreenVisible(false)
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -106,6 +143,18 @@ fun VoiceCallScreen(
                     Text(error, color = Color(0xFFEF4444), fontSize = 13.sp)
                 }
             }
+            if (!canShowBubble) {
+                BubblePermissionHint(
+                    onEnable = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    },
+                )
+            }
             RecognitionSwitch(state = state, onSelect = onSelectRecognition)
             Text(
                 text = stringResource(R.string.voice_call_commands_hint),
@@ -135,6 +184,35 @@ fun VoiceCallScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun BubblePermissionHint(onEnable: () -> Unit) {
+    val colors = LocalAAColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.raisedSurface)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.voice_call_bubble_permission_hint),
+            color = colors.muted,
+            fontSize = 12.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = stringResource(R.string.voice_call_bubble_permission_enable),
+            color = colors.ink,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.noRippleClickable(onClick = onEnable),
+        )
     }
 }
 

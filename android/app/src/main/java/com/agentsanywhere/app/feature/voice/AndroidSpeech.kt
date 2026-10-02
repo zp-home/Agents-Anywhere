@@ -13,6 +13,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -113,33 +114,43 @@ class SystemSpeechInput(
     }
 }
 
-/** Reads replies with the phone's text-to-speech engine. */
+/**
+ * Reads replies with the phone's text-to-speech engine. Engine, language and playback
+ * problems are logged under `AAVoice` and reported through [onProblem] so a silent call
+ * explains itself on screen.
+ */
 class TtsSpeechOutput(
     context: Context,
     private val locale: Locale,
+    private val onProblem: (String) -> Unit,
 ) : SpeechOutput {
     private val ready = CompletableDeferred<Boolean>()
     private val pending = ConcurrentHashMap<String, CancellableContinuation<Unit>>()
     private val tts = TextToSpeech(context.applicationContext) { status ->
+        Log.i(TAG, "tts init status=$status")
         ready.complete(status == TextToSpeech.SUCCESS)
     }
 
     init {
+        // Media usage follows the media volume; some ROMs keep a separate, often muted,
+        // assistant volume.
         tts.setAudioAttributes(
             AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
         )
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) = Unit
+            override fun onStart(utteranceId: String?) {
+                Log.i(TAG, "tts start $utteranceId")
+            }
 
             override fun onDone(utteranceId: String?) = finish(utteranceId)
 
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = finish(utteranceId)
+            override fun onError(utteranceId: String?) = fail(utteranceId, "error")
 
-            override fun onError(utteranceId: String?, errorCode: Int) = finish(utteranceId)
+            override fun onError(utteranceId: String?, errorCode: Int) = fail(utteranceId, "error $errorCode")
 
             override fun onStop(utteranceId: String?, interrupted: Boolean) = finish(utteranceId)
         })
@@ -148,10 +159,13 @@ class TtsSpeechOutput(
     private var languageApplied = false
 
     override suspend fun speak(text: String) {
-        if (!ready.await()) return
+        if (!ready.await()) {
+            onProblem("no text-to-speech engine")
+            return
+        }
         if (!languageApplied) {
             languageApplied = true
-            if (tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE) tts.language = locale
+            applyLanguage()
         }
         suspendCancellableCoroutine { continuation ->
             val id = UUID.randomUUID().toString()
@@ -160,8 +174,33 @@ class TtsSpeechOutput(
                 pending.remove(id)
                 tts.stop()
             }
-            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), id) != TextToSpeech.SUCCESS) finish(id)
+            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), id)
+            if (result != TextToSpeech.SUCCESS) fail(id, "speak returned $result")
         }
+    }
+
+    private fun applyLanguage() {
+        val candidates = listOf(locale, Locale.SIMPLIFIED_CHINESE).distinct()
+        val chosen = candidates.firstOrNull { tts.isLanguageAvailable(it) >= TextToSpeech.LANG_AVAILABLE }
+        Log.i(
+            TAG,
+            "tts engine=${tts.defaultEngine} requested=${locale.toLanguageTag()} " +
+                "available=${candidates.associate { it.toLanguageTag() to tts.isLanguageAvailable(it) }} chosen=${chosen?.toLanguageTag()}",
+        )
+        if (chosen == null) {
+            onProblem("text-to-speech has no ${locale.toLanguageTag()} voice (engine ${tts.defaultEngine})")
+            return
+        }
+        val result = tts.setLanguage(chosen)
+        if (result < TextToSpeech.LANG_AVAILABLE) {
+            onProblem("text-to-speech language ${chosen.toLanguageTag()} unavailable ($result)")
+        }
+    }
+
+    private fun fail(utteranceId: String?, reason: String) {
+        Log.w(TAG, "tts $utteranceId failed: $reason (engine ${tts.defaultEngine})")
+        onProblem("text-to-speech $reason")
+        finish(utteranceId)
     }
 
     private fun finish(utteranceId: String?) {
@@ -177,6 +216,10 @@ class TtsSpeechOutput(
     override fun release() {
         stop()
         tts.shutdown()
+    }
+
+    private companion object {
+        const val TAG = "AAVoice"
     }
 }
 

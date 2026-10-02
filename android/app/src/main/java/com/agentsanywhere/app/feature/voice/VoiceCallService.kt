@@ -33,6 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -53,6 +55,8 @@ class VoiceCallService : Service() {
     private var focusRequest: AudioFocusRequest? = null
     private var switchableInput: SwitchableSpeechInput? = null
     private var setupJob: Job? = null
+    private var bubble: VoiceCallBubble? = null
+    private var bubbleJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -103,11 +107,14 @@ class VoiceCallService : Service() {
         val sessionStore = AuthSessionStore(this)
         val apiClient = ApiClient()
         val speechApi = SpeechApi(apiClient)
-        val speechOutput = TtsSpeechOutput(this, locale).also { output = it }
+        val speechOutput = TtsSpeechOutput(this, locale) { problem ->
+            VoiceCallRegistry.update { it.copy(errorMessage = getString(R.string.voice_call_tts_problem, problem)) }
+        }.also { output = it }
         val voiceCues = ToneVoiceCues().also { cues = it }
         acquireWakeLock()
         requestAudioFocus()
         startMediaSession()
+        startBubble()
 
         setupJob = scope.launch {
             val serverAvailable = withContext(Dispatchers.IO) {
@@ -185,6 +192,10 @@ class VoiceCallService : Service() {
     private fun tearDown() {
         setupJob?.cancel()
         setupJob = null
+        bubbleJob?.cancel()
+        bubbleJob = null
+        bubble?.hide()
+        bubble = null
         engine?.stop()
         engine = null
         switchableInput = null
@@ -232,13 +243,47 @@ class VoiceCallService : Service() {
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build(),
             )
             .build()
         getSystemService(AudioManager::class.java).requestAudioFocus(request)
         focusRequest = request
+    }
+
+    private fun startBubble() {
+        val floating = VoiceCallBubble(this, onTap = ::returnToCall).also { bubble = it }
+        bubbleJob = scope.launch {
+            combine(VoiceCallRegistry.state, VoiceCallRegistry.callScreenVisible) { state, visible ->
+                state?.takeIf { !visible && it.phase != VoiceCallPhase.Ended }?.let { bubbleLabel(it.phase) }
+            }.distinctUntilChanged().collect { label ->
+                if (label == null) floating.hide() else floating.show(label)
+            }
+        }
+    }
+
+    private fun bubbleLabel(phase: VoiceCallPhase): String = getString(
+        when (phase) {
+            VoiceCallPhase.Connecting -> R.string.voice_call_phase_connecting
+            VoiceCallPhase.Listening -> R.string.voice_call_phase_listening
+            VoiceCallPhase.Sending -> R.string.voice_call_phase_sending
+            VoiceCallPhase.AgentWorking -> R.string.voice_call_phase_working
+            VoiceCallPhase.AwaitingApproval -> R.string.voice_call_phase_approval
+            VoiceCallPhase.Speaking -> R.string.voice_call_phase_speaking
+            VoiceCallPhase.Standby, VoiceCallPhase.Ended -> R.string.voice_call_bubble_paused
+        },
+    )
+
+    /** Bubble tap: bring the app forward and ask the session screen to show the call view. */
+    private fun returnToCall() {
+        VoiceCallRegistry.requestShowCall()
+        packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
+            launch.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
+            runCatching { startActivity(launch) }
+        }
     }
 
     private fun startMediaSession() {
