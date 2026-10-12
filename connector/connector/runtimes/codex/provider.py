@@ -1,5 +1,4 @@
 from __future__ import annotations
-from connector.runtime_protocol.host import runtime_kv_store
 
 import sys
 from collections.abc import Callable, Mapping
@@ -20,8 +19,12 @@ from connector.runtime_protocol import (
     RuntimeUnavailableError,
 )
 from connector.runtime_protocol.filesystem import filesystem_resource_key
-from connector.runtime_protocol.host import RuntimeHostClient
+from connector.runtime_protocol.host import RuntimeHostClient, runtime_kv_store
 from connector.runtimes.codex import provider_config
+from connector.runtimes.codex.ipc.transport import (
+    CodexIpcConnection,
+    default_endpoints,
+)
 from connector.runtimes.codex.runtime import CodexRuntime
 from connector.runtimes.codex.sdk.binary import (
     codex_runtime_environment,
@@ -239,6 +242,9 @@ class CodexProvider(RuntimeProvider):
             host=host,
             client=client,
             client_message_kv=runtime_kv_store(host),
+            ipc_connection=CodexIpcConnection(
+                endpoints=default_endpoints(str(config.values["codexHome"]))
+            ),
         )
 
     def resource_claims(

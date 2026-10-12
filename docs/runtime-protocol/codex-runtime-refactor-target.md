@@ -11,8 +11,10 @@ checklist, update this document, run the listed verification, commit, and push.
 
 ## Why this target exists
 
-The active Codex runtime has already moved away from app-server/IPC and now
-uses the official Codex SDK through the `CodexRuntimeClient` boundary. The
+The active Codex runtime has already moved away from the hand-written
+app-server client and now uses the official Codex SDK through the
+`CodexRuntimeClient` boundary (App/IDE-owned conversations are routed over IPC
+behind the same boundary, see [codex-ipc.md](codex-ipc.md)). The
 remaining problem is not only file size; it is that several runtime behaviors
 still pass through transitional dict-shaped projection code.
 
@@ -514,7 +516,7 @@ Stop and ask before proceeding if any step would require:
 
 - changing Server API behavior;
 - changing Web rendering behavior;
-- reintroducing Codex IPC/app-server as an active path;
+- reintroducing the hand-written Codex app-server client as an active path;
 - changing platform timeline item ids;
 - changing `SessionState.status` semantics;
 - deleting `_reference` migration material.

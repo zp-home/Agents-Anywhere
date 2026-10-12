@@ -1,5 +1,9 @@
 # Codex IPC integration
 
+> Superseded by the current follower implementation:
+> [docs/runtime-protocol/codex-ipc.md](../runtime-protocol/codex-ipc.md).
+> Nothing below was used for it.
+
 ## Status and source
 
 Deprecated historical reference only. The active Connector v2 Codex runtime is

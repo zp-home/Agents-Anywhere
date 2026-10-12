@@ -70,6 +70,9 @@ class CodexSessionReader:
     list_permission_catalog: ListPermissionCatalog
     pending_messages: PendingClientMessageRegistry | None = None
     timeline: CodexTimelineAccumulator | None = None
+    # A running Codex App that owns the thread publishes it live over IPC; the
+    # rollout-based polling sync must not race that projection.
+    live_owner: Callable[[str], bool] | None = None
     _pending_sync_states: dict[str, tuple[str, dict[str, Any]]] = field(
         default_factory=dict,
         init=False,
@@ -216,10 +219,13 @@ class CodexSessionReader:
             "hidden": hidden,
             "session_id": session_id,
         }
-        requires_timeline_sync = changed and not hidden
+        live = self.live_owner is not None and self.live_owner(thread_id)
+        requires_timeline_sync = changed and not hidden and not live
         if requires_timeline_sync:
             self._pending_sync_states[session_id] = (sync_key, sync_state)
-        else:
+        elif not live:
+            # A live thread keeps its previous marker so the first poll after the
+            # App releases it reconciles the final rollout once.
             await self.host.sync_state_write(sync_key, sync_state)
         source_state = SessionSourceState(
             availability="archived" if hidden else "available",

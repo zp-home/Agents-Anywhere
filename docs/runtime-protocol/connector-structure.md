@@ -223,10 +223,11 @@ Each runtime package owns:
 - native event reduction into protocol timeline/state/selection projections
 - runtime-specific sync state keys
 
-For example, active Codex owns the official SDK adapter, local rollout history,
-and Codex reducer logic. Historical Codex app-server and IPC implementations
-live under `_reference/codex` and are not imported by active provider/runtime
-code. Claude owns SDK integration, transcript/history normalization, and trust
+For example, active Codex owns the official SDK adapter, the Codex App IPC
+follower (`runtimes/codex/ipc`, see [codex-ipc.md](codex-ipc.md)), local
+rollout history, and Codex reducer logic. Historical Codex app-server and IPC
+implementations live under `_reference/codex` and are not imported by active
+provider/runtime code. Claude owns SDK integration, transcript/history normalization, and trust
 handling.
 
 Runtime packages implement `AgentRuntime` and call `RuntimeHostClient`.

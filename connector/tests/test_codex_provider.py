@@ -51,7 +51,7 @@ async def _test_codex_provider_requires_sdk_for_runnable_surface() -> None:
     assert item.metadata["configured"] is True
     assert item.instance_policy == "single"
     assert item.capabilities["commands"] is True
-    assert item.capabilities["ipc"] is False
+    assert item.capabilities["ipc"] is True
     assert item.metadata["sdk"]["available"] is False
     assert item.metadata["runtimeBinary"]["mode"] == "prefer_system"
     assert "appServer" not in item.metadata

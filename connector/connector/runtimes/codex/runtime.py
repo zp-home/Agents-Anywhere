@@ -16,11 +16,11 @@ from connector.runtime_protocol import (
     RuntimeIdentity,
     RuntimeModelCatalog,
     RuntimeOperationResult,
-    RuntimeUnsupportedError,
     RuntimePermissionCatalog,
     RuntimeSessionSourceStateCache,
     RuntimeSessionStateCache,
     RuntimeTimelineSnapshot,
+    RuntimeUnsupportedError,
     SessionMeta,
     SessionNotice,
     SessionState,
@@ -36,6 +36,10 @@ from connector.runtimes.codex.domain.notices import CodexNoticeRegistry
 from connector.runtimes.codex.domain.pending_messages import (
     PendingClientMessageRegistry,
 )
+from connector.runtimes.codex.ipc.mirror import CodexIpcMirror
+from connector.runtimes.codex.ipc.routing_client import CodexIpcRoutingClient
+from connector.runtimes.codex.ipc.session_sync import CodexIpcSessionSync
+from connector.runtimes.codex.ipc.transport import CodexIpcConnection
 from connector.runtimes.codex.lifecycle.runtime_lifecycle import CodexRuntimeLifecycle
 from connector.runtimes.codex.notifications import CodexNotificationProjector
 from connector.runtimes.codex.sdk.runtime_client import (
@@ -54,6 +58,7 @@ class CodexRuntime(AgentRuntime):
     client: CodexRuntimeClient | None = None
     client_message_kv: JsonKeyValueStore | None = None
     runtime_version: str = "native-0"
+    ipc_connection: CodexIpcConnection | None = None
 
     def __post_init__(self) -> None:
         self._active_turn_ids: dict[str, str] = {}
@@ -83,6 +88,19 @@ class CodexRuntime(AgentRuntime):
             timeline=self._timeline,
             notices=self._notices,
         )
+        self._ipc_sync: CodexIpcSessionSync | None = None
+        if self.ipc_connection is not None and self.client is not None:
+            mirror = CodexIpcMirror(self.ipc_connection)
+            self._ipc_sync = CodexIpcSessionSync(
+                host=self.host,
+                mirror=mirror,
+                session_states=self._session_states,
+                active_turn_ids=self._active_turn_ids,
+                notices=self._notices,
+                notice_handler=self._notifications.notice_handler,
+                pending_messages=self._pending_messages,
+            )
+            self.client = CodexIpcRoutingClient(self.client, mirror, self._ipc_sync)
         self._lifecycle = CodexRuntimeLifecycle(
             client=self.client,
             notifications=self._notifications,
@@ -102,6 +120,7 @@ class CodexRuntime(AgentRuntime):
             list_permission_catalog=self._catalogs.list_permission_catalog,
             pending_messages=self._pending_messages,
             timeline=self._timeline,
+            live_owner=self._ipc_sync.owns if self._ipc_sync is not None else None,
         )
         self._turns = CodexTurnController(
             host=self.host,

@@ -137,8 +137,11 @@ atomic file transactions and legacy migration.
 
 The default providers are Codex, Claude and DSH. The connector reports attached runtime
 capabilities to the server. Codex is discovered through the official
-`openai-codex` SDK package; the connector does not use a Codex CLI/app-server
-path or IPC switch as an active runtime surface. If Claude Code is not on
+`openai-codex` SDK package. When the Codex App or VS Code extension is running,
+conversations it has open are followed live over the Codex desktop IPC router
+and executed by that App; see
+[Codex App IPC follower](../docs/runtime-protocol/codex-ipc.md). There is no
+configuration switch for this. If Claude Code is not on
 `PATH`, set:
 
 ```bash

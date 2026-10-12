@@ -57,11 +57,13 @@ Completed Connector migration pieces:
 - Connector server runtime RPC is split into runtime lifecycle/config/catalog,
   session sync/state, and turn/command/interaction coordinators.
 - Native `runtimes/codex` and `runtimes/claude` provider/runtime packages exist.
-- Active Codex is SDK-only through `CodexRuntimeClient`; historical app-server
-  and IPC code is reference/deprecated material only.
+- Active Codex executes through the SDK `CodexRuntimeClient`; conversations
+  owned by a running Codex App/IDE are followed over desktop IPC
+  ([codex-ipc.md](codex-ipc.md)). Historical app-server and IPC code is
+  reference/deprecated material only.
 - Old Codex/Claude/adapter code lives under `_reference/`.
-- Architecture tests forbid active imports of deprecated root modules and
-  Codex app-server/IPC tokens.
+- Architecture tests forbid active imports of deprecated root modules, the
+  Codex app-server client and the historical IPC classes.
 
 Remaining Connector gaps:
 
@@ -346,14 +348,18 @@ Use the SDK if it exposes enough surface for:
 - command/slash-command support or enough primitives to implement it;
 - session state and notice projection.
 
-The active Codex integration is SDK-only. Historical app-server and IPC code may
-remain under `_reference/codex` for comparison while SDK coverage is completed,
-but it must not be imported by active provider/runtime code.
+The active Codex integration executes through the official SDK. Conversations
+owned by a running Codex App/IDE are additionally followed over desktop IPC and
+executed by that owner; see [codex-ipc.md](codex-ipc.md). Historical app-server
+and IPC code may remain under `_reference/codex` for comparison, but it must not
+be imported by active provider/runtime code.
 
 Rules:
 
-- Do not continue expanding hand-written Codex IPC as an active integration path.
-- Do not expose app-server or IPC switches in active Codex runtime config.
+- Codex IPC lives in `runtimes/codex/ipc/` behind the `CodexRuntimeClient`
+  boundary; do not revive the historical adapter or IPC classes.
+- Do not expose app-server or IPC switches in active Codex runtime config; IPC
+  following is unconditional and inactive when no App/IDE router exists.
 - `CodexRuntime` implements `AgentRuntime`.
 - `CodexRuntime` calls `RuntimeHostClient`.
 - `steer_turn` and `interrupt_turn` do not require `turn_id`.
@@ -384,7 +390,7 @@ Acceptance:
 - The app-server JSON-RPC client remains only as reference material under
   `_reference/codex/app_server_client.py`.
 - `CodexProvider` must not expose `sdkMode`, `executablePath`, or `ipcEnabled`.
-  The `ipc` capability remains false in the active SDK runtime.
+  The `ipc` capability is true: App/IDE-owned conversations are followed over IPC.
 - Basic `CodexRuntime` supports `identity`, `start`, `stop`, `get_config`, model catalog, permission catalog, session list, session snapshot, session state reads, text-only turn start, text-only steer, local interrupt, and minimal live timeline item upserts.
 - Basic `CodexRuntime` depends only on the narrow `CodexRuntimeClient`
   protocol; SDK/app-server transport details stay outside the runtime reducer.

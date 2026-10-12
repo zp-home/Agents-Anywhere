@@ -51,8 +51,6 @@ FORBIDDEN_ACTIVE_CODEX_TOKENS = {
     "JsonRpcStdioClient",
     "CodexIpcClient",
     "CodexIpcPublisher",
-    "thread-follower-start-turn",
-    "thread-follower-interrupt-turn",
     "ipcEnabled",
     "sdkMode",
 }

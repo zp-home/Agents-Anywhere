@@ -40,7 +40,7 @@ Rough completion by behavior area:
 | Server ingest | Complete for T09 | Runtime host notifications now land as partial state updates, upsert-only Codex timeline sync, hidden session meta, and interaction lifecycle notices. |
 | Web session interaction | Complete for T10 | Session detail composer now derives action state from runtime state plus effective capabilities, resolves optimistic messages by `clientMessageId`, ignores snapshot catalogs, and does not refresh runtime state from legacy `session.status_changed` events. |
 | Dashboard realtime | Complete for T11 | Dashboard connects through a dedicated WebSocket lifecycle, receives the initial connector/session snapshot there, and receives pushed snapshots for changes without recurring connector/session list polling. |
-| Codex IPC side-channel | Intentionally unsupported for SDK-first release | Old IPC behavior is reference-only; active Codex runtime keeps `ipc=false` and exposes no IPC config switch. |
+| Codex IPC side-channel | Implemented as follower ([codex-ipc.md](codex-ipc.md)) | App/IDE-owned conversations are followed and driven over IPC; `ipc=true`; no config switch. Old IPC code stays reference-only. |
 
 ## Target checklist
 
@@ -562,7 +562,9 @@ corepack yarn lint
 
 ### T12. Codex IPC optional side-channel
 
-Status: intentionally unsupported for SDK-first release.
+Status: superseded. Codex App/IDE following was implemented as a fresh
+follower behind `CodexRuntimeClient`; see [codex-ipc.md](codex-ipc.md). The
+historical decision below is kept for context.
 
 Goal:
 
